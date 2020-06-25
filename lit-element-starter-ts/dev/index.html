@@ -13,8 +13,48 @@
     </style>
   </head>
   <body>
-    <skottie-player>
-      <p>This is child content</p>
+    <!-- <div style="width:600px;height:600px" id="player" class="lottie" data-animation-path="../samples/animations/" data-anim-loop="true"></div> -->
+
+    <skottie-player id='skottie_player'>
+      <div style='width:600px;height:600px' id='player' class='lottie' data-animation-path='../samples/animations/' data-anim-loop='true'></div>
     </skottie-player>
+
+    <script src="../node_modules/lottie-web/build/player/lottie.js" type="text/javascript"></script>
+
+    <script>
+      var anim;
+      var elem = document.getElementById('player');
+      var animData = {
+          container: elem,
+          renderer: 'svg',
+          loop: true,
+          autoplay: true,
+          rendererSettings: {
+              progressiveLoad:true,
+              preserveAspectRatio: 'xMidYMid meet',
+              imagePreserveAspectRatio: 'xMidYMid meet',
+              title: 'TEST TITLE',
+              description: 'TEST DESCRIPTION',
+              filterSize: {
+                  width: '300%',
+                  height: '300%',
+                  x: '-100%',
+                  y: '-100%',
+              }
+          },
+          path: '../samples/animations/gear.json',
+      };
+      // lottie.setQuality('low');
+      anim = lottie.loadAnimation(animData);
+      // anim.setSubframe(false);
+      anim.onError = function(errorType, nativeError, errorProps) {
+          console.log(errorType)
+      }
+
+      anim.addEventListener('error', function(error) {
+          console.log(error)
+      })
+    </script>
+
   </body>
 </html>

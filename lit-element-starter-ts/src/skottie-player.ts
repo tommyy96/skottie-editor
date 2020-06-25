@@ -31,11 +31,15 @@ export class SkottiePlayer extends LitElement {
     }
   `;
 
+  static get properties() {
+    return {
+    };
+  }
   /**
    * The name to say "Hello" to.
    */
   @property()
-  name = 'World';
+  name = 'Skottie Player';
 
   /**
    * The number of times the button has been clicked.
@@ -45,10 +49,10 @@ export class SkottiePlayer extends LitElement {
 
   render() {
     return html`
-      <h1>Hello, ${this.name}!</h1>
-      <button @click=${this._onClick} part="button">
+      <h1>${this.name}</h1>
+      <!-- <button @click=${this._onClick} part="button">
         Click Count: ${this.count}
-      </button>
+      </button> -->
       <slot></slot>
     `;
   }
