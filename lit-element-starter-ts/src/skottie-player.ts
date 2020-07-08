@@ -14,10 +14,12 @@
 
 import {LitElement, html, customElement, property, css} from 'lit-element';
 // import {Lottie} from 'lottie-web';
-import * as lottie from 'lottie-web'; // Using light version for lighter bundle
-type LettiePlayer = typeof lottie.default;
-const lottiePlayer = lottie as any as LettiePlayer;
-// console.log(lottiePlayer)
+const LottieModule = (window as any).lottie;
+import * as lottie from 'lottie-web/build/player/lottie_light';  // Using light version for lighter bundle
+type LottiePlayerRoot = typeof lottie.default;
+const lottiePlayer = LottieModule as any as LottiePlayerRoot;
+console.log(lottie);
+console.log(lottiePlayer);
 
 // const JSONEditor = require('jsoneditor/dist/jsoneditor-minimalist.js');
 // const lottie = require('../node_modules/lottie-web/build/player/lottie.min.js');
@@ -182,8 +184,6 @@ export class SkottiePlayer extends LitElement {
         },
         path: this.fileURL
       };
-      console.log(animData);
-      console.log(typeof lottie);
       console.log(lottiePlayer);
       const animation = lottiePlayer.loadAnimation(animData);
       animation.play();
@@ -207,6 +207,7 @@ export class SkottiePlayer extends LitElement {
         reader.readAsText(file);
         reader.onload = function() {
           player.setContent(JSON.parse((reader.result as string)));
+          lottiePlayer.destroy();
           player.updatePlayer();
         };
       }
