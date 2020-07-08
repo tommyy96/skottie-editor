@@ -13,45 +13,12 @@
  */
 
 import {LitElement, html, customElement, property, css} from 'lit-element';
-// import {Lottie} from 'lottie-web';
 const LottieModule = (window as any).lottie;
 import * as lottie from 'lottie-web/build/player/lottie_light';  // Using light version for lighter bundle
 type LottiePlayerRoot = typeof lottie.default;
 const lottiePlayer = LottieModule as any as LottiePlayerRoot;
-console.log(lottie);
+console.log(lottie);  
 console.log(lottiePlayer);
-
-// const JSONEditor = require('jsoneditor/dist/jsoneditor-minimalist.js');
-// const lottie = require('../node_modules/lottie-web/build/player/lottie.min.js');
-
-//const CanvasKitInit = require('../node_modules/canvaskit-wasm/bin/canvaskit.js');
-
-// const loadingTemplate = (ele: SkottiePlayer) => html`
-// <div class=player-loading title="Loading animation and engine."
-//   style='width: ${ele._config.width}px; height: ${ele._config.height}px;'>
-//   <div>Loading</div>
-//   <spinner-sk active></spinner-sk>
-// </div>`;
-
-// const runningTemplate = (ele: SkottiePlayer) => html`
-// <div class=container>
-//   <div class=wrapper>
-//     <canvas class=skottie-canvas id=skottie
-//             width=${ele._config.width * window.devicePixelRatio}
-//             height=${ele._config.height * window.devicePixelRatio}
-//             style='width: ${ele._config.width}px; height: ${ele._config.height}px;'>
-//       Your browser does not support the canvas tag.
-//     </canvas>
-//     <div class=controls ?hidden=${!ele._config.controls}>
-//       <play-arrow-icon-sk @click=${ele._onPlay} ?hidden=${!ele._state.paused}></play-arrow-icon-sk>
-//       <pause-icon-sk @click=${ele._onPause} ?hidden=${ele._state.paused}></pause-icon-sk>
-//       <input type=range min=0 max=100 @input=${ele._onScrub} @change=${ele._onScrubEnd}
-//              class=skottie-player-scrubber>
-//       <settings-icon-sk @click=${ele._onSettings}></settings-icon-sk>
-//     </div>
-//   </div>
-//   ${settingsTemplate(ele)}
-// </div>`;
 
 interface layer {
   ty?: Number,
@@ -94,13 +61,6 @@ interface lottieFile {
   chars?: Array<any>
 };
 
-
-/**
- * An example element.
- *
- * @slot - This element has a slot
- * @csspart button - The button
- */
 @customElement('skottie-player')
 export class SkottiePlayer extends LitElement {
   static get styles() {
@@ -110,12 +70,13 @@ export class SkottiePlayer extends LitElement {
       border: solid 1px gray;
       padding: 16px;
       max-width: 800px;
+      font-family: sans-serif;
     }
   `;
   }
 
   /**
-   * The title of the json file.
+   * The title of the json file. This is displayed above the animation.
    */
   @property({type: String})
   title = '';
@@ -127,7 +88,7 @@ export class SkottiePlayer extends LitElement {
   content:lottieFile = {};
 
   /**
-   * The URL to the json file.
+   * The URL/path to the json file.
    */
   @property({type: String})
   fileURL = '../samples/animations/gear.json';
@@ -139,32 +100,22 @@ export class SkottiePlayer extends LitElement {
 
   render(){
     return html`
-      <!-- <script src="../node_modules/lottie-web/build/player/lottie.min.js" type="text/javascript"></script> -->
-
       <h1>${this.title}</h1>
+
       <div style='width:600px;height:600px' id='player' class='lottie' data-anim-loop='true'></div>
-      <!-- <ul>
-      ${this.content.layers?.map(i => html`
-        <li>
-          <ul>${this._showLayerProperties(i).map(j => html`
-            <li>${j}</li>
-          `)}
-          </ul>
-        </li>
-      `)}
-      </ul> -->
+
       <input type="file" id="input" accept=".json" @change="${this._handleFileUpload}">
       `;
   }
 
-  // sets content object
   setContent(newContent: Object): void {
     this.content = newContent;
   }
 
+  // updates lottie player with uploaded animation
   updatePlayer(): void {
-    console.log(this.fileURL);
     let player = this.shadowRoot?.getElementById("player");
+
     if(player) {
       let animData = {
         container: player,
@@ -184,14 +135,12 @@ export class SkottiePlayer extends LitElement {
         },
         path: this.fileURL
       };
-      console.log(lottiePlayer);
+      
       const animation = lottiePlayer.loadAnimation(animData);
       animation.play();
     }
   }
 
-
-  // handles file upload
   _handleFileUpload(): void {
     let fileInput = this.shadowRoot?.getElementById("input");
     if(fileInput) {
@@ -219,7 +168,6 @@ export class SkottiePlayer extends LitElement {
     let propArray = [];
     switch(currLayer.ty) {
       case 0:
-        // not really sure what to include in this
         console.log("Type: precomp");
         propArray.push(currLayer.ip);
         propArray.push(currLayer.op);
@@ -251,7 +199,7 @@ export class SkottiePlayer extends LitElement {
         propArray.push(currLayer.sr);
         break;
       case 4:
-        // console.log("Type: shape");
+        console.log("Type: shape");
         propArray.push(currLayer.ip);
         propArray.push(currLayer.op);
         propArray.push(currLayer.st);
