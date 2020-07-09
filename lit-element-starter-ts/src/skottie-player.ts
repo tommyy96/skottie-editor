@@ -51,8 +51,8 @@ interface lottieFile {
   ip?: Number,
   op?: Number,
   fr?: Number,
-  w?: Number,
-  h?: Number,
+  w?: number,
+  h?: number,
   ddd?: Number,
   v?: String,
   nm?: String,
@@ -93,6 +93,18 @@ export class SkottiePlayer extends LitElement {
   @property({type: String})
   fileURL = '../samples/animations/gear.json';
 
+  /**
+   * The width of the animation.
+   */
+  @property({type: Number})
+  width = 0;
+
+  /**
+   * The height of the animation.
+   */
+  @property({type: Number})
+  height = 0;
+
   constructor() {
     super();
     this.title = 'Select a file';
@@ -102,7 +114,7 @@ export class SkottiePlayer extends LitElement {
     return html`
       <h1>${this.title}</h1>
 
-      <div style='width:600px;height:600px' id='player' class='lottie' data-anim-loop='true'></div>
+      <div style='width:${this.width}px;height:${this.height}px' id='player' class='lottie' data-anim-loop='true'></div>
 
       <input type="file" id="input" accept=".json" @change="${this._handleFileUpload}">
       `;
@@ -110,6 +122,12 @@ export class SkottiePlayer extends LitElement {
 
   setContent(newContent: Object): void {
     this.content = newContent;
+    if(this.content.w) {
+      this.width = this.content.w;
+    }
+    if(this.content.h) {
+      this.height = this.content.h;
+    } 
   }
 
   // updates lottie player with uploaded animation
