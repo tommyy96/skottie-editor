@@ -1,15 +1,5 @@
 /**
- * @license
- * Copyright (c) 2019 The Polymer Project Authors. All rights reserved.
- * This code may only be used under the BSD style license found at
- * http://polymer.github.io/LICENSE.txt
- * The complete set of authors may be found at
- * http://polymer.github.io/AUTHORS.txt
- * The complete set of contributors may be found at
- * http://polymer.github.io/CONTRIBUTORS.txt
- * Code distributed by Google as part of the polymer project is also
- * subject to an additional IP rights grant found at
- * http://polymer.github.io/PATENTS.txt
+ * write something here
  */
 
 import {LitElement, html, customElement, property, css} from 'lit-element';
@@ -19,6 +9,7 @@ type LottiePlayerRoot = typeof lottie.default;
 const lottiePlayer = LottieModule as any as LottiePlayerRoot;
 console.log(lottie);  
 console.log(lottiePlayer);
+// import JSONEditor from 'jsoneditor';
 
 interface layer {
   ty?: Number,
@@ -69,7 +60,7 @@ export class SkottiePlayer extends LitElement {
       display: block;
       border: solid 1px gray;
       padding: 16px;
-      max-width: 800px;
+      max-width: 100%;
       font-family: sans-serif;
     }
   `;
@@ -105,6 +96,12 @@ export class SkottiePlayer extends LitElement {
   @property({type: Number})
   height = 0;
 
+  /**
+   * Boolean indicating if a file has been uploaded yet.
+   */
+  @property({type: Boolean})
+  fileUploaded = false;
+
   constructor() {
     super();
     this.title = 'Select a file';
@@ -117,6 +114,7 @@ export class SkottiePlayer extends LitElement {
       <div style='width:${this.width}px;height:${this.height}px' id='player' class='lottie' data-anim-loop='true'></div>
 
       <input type="file" id="input" accept=".json" @change="${this._handleFileUpload}">
+      <div style='width:100%;height:600px' id='jsoneditor'></div>
       `;
   }
 
@@ -175,8 +173,22 @@ export class SkottiePlayer extends LitElement {
           player.setContent(JSON.parse((reader.result as string)));
           lottiePlayer.destroy();
           player.updatePlayer();
+          player._loadJSONEditor();
+          player.fileUploaded = true;
         };
       }
+    }
+  }
+
+  _loadJSONEditor() {
+    const container = this.shadowRoot?.getElementById("jsoneditor");
+    if(container) {
+        console.log("jsoneditor would go here");
+    //   const editor = new JSONEditor(container);
+    //   if(this.fileUploaded) {
+    //     editor.destroy();
+    //   }
+    //   editor.set(this.content);
     }
   }
 
