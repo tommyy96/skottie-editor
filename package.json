@@ -1,0 +1,34 @@
+{
+  "name": "skottie-editor",
+  "version": "1.0.0",
+  "description": "A web-based editor for Lottie animation files that uses Skottie to play files.",
+  "main": "skottie-player.js",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "serve": "es-dev-server --app-index dev/index.html --node-resolve --watch --open",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tommyy96/skottie-editor.git"
+  },
+  "author": "Tommy Yang",
+  "license": "BSD-3-Clause",
+  "bugs": {
+    "url": "https://github.com/tommyy96/skottie-editor/issues"
+  },
+  "homepage": "https://github.com/tommyy96/skottie-editor#readme",
+  "devDependencies": {
+    "@types/jsoneditor": "^8.6.0",
+    "jsoneditor": "^9.0.3",
+    "lit-element": "^2.3.1",
+    "lit-html": "^1.2.1",
+    "lottie-web": "^5.7.0",
+    "tslint": "^5.12.1",
+    "typescript": "^3.9.6"
+  },
+  "dependencies": {
+    "es-dev-server": "^1.56.0"
+  }
+}
