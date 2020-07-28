@@ -73,6 +73,7 @@ interface LottieFile {
   nm?: string; // name
   layers?: Array<Layer>; // layers array
   assets?: Array<any>; // assets array
+  fonts?: any; // fonts object
   chars?: Array<any>; // characters array
 }
 
@@ -193,9 +194,7 @@ export class SkottiePlayer extends LitElement {
 
       <slot></slot>
       <br>
-      <p>
       JSON upload
-      </p>
       <input
         type="file"
         id="input"
@@ -203,15 +202,38 @@ export class SkottiePlayer extends LitElement {
         @change="${this.handleFileUpload}"
       />
       <br>
-      <p>
-      Asset upload
-      </p>
-      <input
-        type="file"
-        id="asset-input"
-        multiple
-        @change="${this.handleAssetUpload}"
-      />
+      ${this.content.assets != undefined ?
+        (this.content.assets as any[]).map(asset =>
+          asset.p != undefined ?
+          html`
+            <br>
+            ${asset.p}
+            <input
+              type="file"
+              id="${asset.p}-input"
+              map-key="${asset.p}"
+              @change="${this.handleAssetUpload}"
+            />
+            <br>
+          `:
+          ""
+          ):
+        ""}
+        ${this.content.fonts != undefined ?
+          (this.content.fonts.list as any[]).map(font =>
+            html`
+            <br>
+            ${font.fName}
+            <input
+              type="file"
+              id="${font.fName}-input"
+              map-key="${font.fName}"
+              @change="${this.handleAssetUpload}"
+            />
+            <br>
+            `
+            ):
+          ""}
 
       ${this.fileUploaded ?
         html`
@@ -365,41 +387,31 @@ export class SkottiePlayer extends LitElement {
    */
   updatePlayer(): void {
     // Load the animation Lottie JSON file.
-    const loadLottie = fetch(this.fileUrl).then((resp) => resp.text());
-
-    if (this._jsonUploaded()) {
+    if (this._jsonUploaded() && this.content.assets && this.content.fonts &&
+      (this.assets as Map<string, any>).size === this._getNumAssets(this.content.assets) + this.content.fonts.list.length) {
+      const loadLottie = fetch(this.fileUrl).then((resp) => resp.text());
+      console.log(this.assets);
       Promise.all([loadKit, loadLottie]).then((values: any) => {
         const [SkottieKit, lottieJSON] = values;
         const animation = SkottieKit.MakeManagedAnimation(lottieJSON, this.assets);
-        console.log(this.assets);
         const duration = animation.duration() * 1000;
-  
-        // if (this.fileChanged) {
-          const oldCanvas = document.getElementById('my-canvas');
-          if(oldCanvas) {
-            oldCanvas.remove();
-          }
-  
-          const canvasElement = document.createElement('canvas');
-          canvasElement.setAttribute('id', 'my-canvas');
-          canvasElement.setAttribute('width', this.width.toString());
-          canvasElement.setAttribute('height', this.height.toString());
-  
-          const parent = document.getElementById('skottie-player');
-          if (parent) {
-            parent.append(canvasElement);
-            this.canvasSurface = SkottieKit.MakeCanvasSurface('my-canvas');
-            this.fileChanged = false;
-          }
-        // } else {
-        //   const canvasElement = document.getElementById('my-canvas');
-        //   if(canvasElement) {
-        //     canvasElement.setAttribute('width', this.width.toString());
-        //     canvasElement.setAttribute('height', this.height.toString());
-        //   }
-        // }
 
-        console.log('updating animation');
+        const oldCanvas = document.getElementById('my-canvas');
+        if(oldCanvas) {
+          oldCanvas.remove();
+        }
+
+        const canvasElement = document.createElement('canvas');
+        canvasElement.setAttribute('id', 'my-canvas');
+        canvasElement.setAttribute('width', this.width.toString());
+        canvasElement.setAttribute('height', this.height.toString());
+
+        const parent = document.getElementById('skottie-player');
+        if (parent) {
+          parent.append(canvasElement);
+          this.canvasSurface = SkottieKit.MakeCanvasSurface('my-canvas');
+          this.fileChanged = false;
+        }
   
         const surface = (this.canvasSurface as any);
   
@@ -441,6 +453,9 @@ export class SkottiePlayer extends LitElement {
             reader.readAsText(file);
             reader.onload = () => {
               this.setContent(JSON.parse(reader.result as string));
+              if (this.content.assets) {
+                this.assets = new Map<string, any>();
+              }
               this.fileString = JSON.stringify(this.content);
               this._loadJSONEditor();
               this.fileChanged = true;
@@ -453,26 +468,23 @@ export class SkottiePlayer extends LitElement {
     }
   }
 
-  handleAssetUpload(): void {
-    if (this.shadowRoot) {
-      const assetInput = this.shadowRoot.getElementById('asset-input');
-      if (assetInput) {
-        const files = (assetInput as HTMLInputElement).files;
-        if (files) {
-          this.assets = new Map<string, any>();
-          for (let i = 0; i < files.length; i++) {
-            const reader = new FileReader();
-            reader.readAsArrayBuffer(files[i]);
-            reader.onload = () => {
-              console.log(reader.result);
-              (this.assets as any)[files[i].name] = reader.result;
-            }
-          }
+  handleAssetUpload(e: Event): void {
+    const assetInput = (e.composedPath()[0] as HTMLInputElement);
+    const mapKey = assetInput.getAttribute('map-key');
+    if (assetInput && mapKey) {
+      const files = assetInput.files;
+      if (files) {
+        const reader = new FileReader();
+        reader.readAsArrayBuffer(files[0]);
+        reader.onload = () => {
+          console.log(reader.result);
+          (this.assets as Map<string, any>).set(mapKey, reader.result);
           this.updatePlayer();
         }
       }
     }
   }
+
 
   _loadJSONEditor(): void {
     (this.jsonEditor as JSONEditor).set(this.content)
@@ -643,11 +655,21 @@ export class SkottiePlayer extends LitElement {
     return [r, g, b, 1];
   }
 
-  _jsonUploaded(): boolean{
+  _jsonUploaded(): boolean {
     if (this.content.assets) {
       return true;
     }
     return false;
+  }
+
+  _getNumAssets(assets: Array<any>): number {
+    let length = 0;
+    for (let i = 0; i < assets.length; i++) {
+      if(assets[i].p != undefined) {
+        length++;
+      }
+    }
+    return length;
   }
 }
 
