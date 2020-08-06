@@ -4,7 +4,8 @@
   <head>
     <meta charset="utf-8">
     <title>&lt;skottie-player> Demo</title>
-    <script type="module" src="../skottie-player.js"></script>
+    <script type="module" src="../dist/skottie-player.js"></script>
+    <script src="/node_modules/skottiekit-wasm/bin/skottiekit.js"></script>
     <style>
       p {
         border: solid 1px blue;
@@ -13,6 +14,7 @@
     </style>
   </head>
   <body>
-    <skottie-player></skottie-player>
+    <skottie-player id="skottie-player">
+    </skottie-player>
   </body>
 </html>
