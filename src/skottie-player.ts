@@ -5,22 +5,14 @@
 import {css, customElement, html, LitElement, property} from 'lit-element';
 import lottiePlayer, {AnimationConfigWithPath} from 'lottie-web/build/player/lottie_light';
 import JSONEditor, {JSONEditorOptions} from 'jsoneditor';
-// import SkottieKit from 'skottiekit-wasm';
+const ColorThief =  require('color-thief');
+const colorThief = new ColorThief();
 const SkottieKitInit = require('skottiekit-wasm/bin/skottiekit.js');
-// const CanvasKitInit = require('canvaskit-wasm/bin/canvaskit.js');
-
 const fs = require('fs');
 const path = require('path');
-
 const loadKit = SkottieKitInit({
   locateFile: (file: string) => '/node_modules/skottiekit-wasm/bin/'+file,
 });
-
-// CanvasKitInit().then((CanvasKit: any) => {
-//   // Code goes here using CanvasKit
-//   CanvasKit;
-// });
-// require('./styles.css');
 
 /**
  * Layer types:
@@ -57,10 +49,6 @@ interface Layer {
   tm?: any; // time remapping
   t?: any; // text
 }
-
-// interface Shape {
-//   // fill out
-// }
 
 interface LottieFile {
   ip?: number; // in point
@@ -160,18 +148,184 @@ export class SkottiePlayer extends LitElement {
   @property({type: String})
   fileString = '';
 
+  /**
+   * The JSONEditor.
+   */
   @property({type: JSONEditor})
   jsonEditor = {};
 
+  /**
+   * The canvas surface for Skottie.
+   */
   @property({type: Object})
   canvasSurface = {};
 
-  @property({type: Boolean})
-  fileChanged = false;
-
-  @property({type: Map})
+  /** 
+   * The user uploaded assets.
+   */
+  @property({type: Object})
   assets = {};
 
+  /**
+   * The dominant colors of the uploaded image assets.
+   */
+  @property({type: Object})
+  imageColors = {};
+
+  /**
+   * Renders asset input buttons after json upload.
+   */
+  renderAssetInputs() {
+    return html`
+    ${this.content.assets != undefined ?
+      (this.content.assets as any[]).map(asset =>
+        asset.p != undefined ?
+        html`
+          <br>
+          ${asset.p}
+          <input
+            type="file"
+            id="${asset.p}-input"
+            map-key="${asset.p}"
+            asset-type="image"
+            @change="${this.handleAssetUpload}"
+          />
+          <br>
+        `:
+        ""
+    ):
+    ""}
+    ${this.content.fonts != undefined ?
+      (this.content.fonts.list as any[]).map(font =>
+        html`
+          <br>
+          ${font.fName}
+          <input
+            type="file"
+            id="${font.fName}-input"
+            map-key="${font.fName}"
+            asset-type="font"
+            @change="${this.handleAssetUpload}"
+          />
+          <br>
+        `
+      ):
+    ""}
+    `;
+  }
+
+  /**
+   * Renders json editor/GUI toggle button.
+   */
+  renderJsonEditorButton() {
+    if (this.showJsonEditor) {
+      return html`
+        <button 
+          type="button"
+          @click="${this.hideJSONEditor}">
+            Show GUI Editor
+        </button>
+      `;
+    } else {
+      return html`
+        <button 
+          type="button"
+          @click="${this.showJSONEditor}">
+            Show JSON Editor
+        </button>
+      `;
+    }
+  }
+
+  /**
+   * Renders content toggle button for a specific layer in the GUI editor.
+   */
+  renderLayerButton(layer: Layer) {
+    return html`
+      <button
+        type="button"
+        class="layerbutton"
+        @click="${this.toggleContent}"
+        layername="${layer.nm}"
+        toggled="false">
+          ${layer.nm}
+      </button>
+    `;
+  }
+
+  /**
+   * Renders visibility checkbox for a specific layer in the GUI editor.
+   */
+  renderVisibilityCheckbox(layer: Layer) {
+    if (layer.ks.o.k === 0) {
+      return html`
+      <input
+      type="checkbox"
+      id="${layer.nm} Visibility"
+      @click="${this.updateJson}">
+      `;
+    } else {
+      return html`
+      <input
+      type="checkbox"
+      id="${layer.nm} Visibility"
+      checked
+      @click="${this.updateJson}">
+      `;
+    }
+  }
+
+  /**
+   * Renders color content for a specific layer in the GUI editor.
+   */
+  renderLayerColorContent(layer: Layer) {
+    if (layer.ty === 1) {
+      return html`
+      <br>
+      <div>
+        Color: 
+        <input
+        type="color"
+        id="${layer.nm} Color Input"
+        value="${layer.sc}"
+        @change="${this.updateJson}">
+      </div>
+      `;
+    } else if (layer.ty  === 4) {
+      return html`
+        <br>
+        ${(layer.shapes as any[]).map(shape => shape.ty === "fl" || shape.ty === "gr" ?
+          html`
+            <div>
+              <button
+              type="button"
+              class="layerbutton"
+              @click="${this.toggleContent}"
+              layername="${layer.nm+ ' ' +shape.nm}"
+              toggled="false">
+                ${shape.nm}
+              </button>
+              
+              <div
+              class="content"
+              id="${layer.nm+ ' ' +shape.nm} Content"
+              style="display:none">
+                Color: 
+                <input
+                type="color"
+                id="${layer.nm + ' ' + shape.nm} Color Input"
+                value="${this.extractColor(shape)}"
+                @change="${this.updateJson}">
+              </div>
+            </div>
+          `:
+          ""
+        )}
+      `;
+    } else {
+      return ""
+    }
+  }
 
   render() {
     return html`
@@ -194,153 +348,50 @@ export class SkottiePlayer extends LitElement {
 
       <slot></slot>
       <br>
+
       JSON upload
       <input
-        type="file"
-        id="input"
-        accept=".json"
-        @change="${this.handleFileUpload}"
+      type="file"
+      id="input"
+      accept=".json"
+      @change="${this.handleFileUpload}"
       />
       <br>
-      ${this.content.assets != undefined ?
-        (this.content.assets as any[]).map(asset =>
-          asset.p != undefined ?
-          html`
-            <br>
-            ${asset.p}
-            <input
-              type="file"
-              id="${asset.p}-input"
-              map-key="${asset.p}"
-              @change="${this.handleAssetUpload}"
-            />
-            <br>
-          `:
-          ""
-          ):
-        ""}
-        ${this.content.fonts != undefined ?
-          (this.content.fonts.list as any[]).map(font =>
-            html`
-            <br>
-            ${font.fName}
-            <input
-              type="file"
-              id="${font.fName}-input"
-              map-key="${font.fName}"
-              @change="${this.handleAssetUpload}"
-            />
-            <br>
-            `
-            ):
-          ""}
+
+      ${this.renderAssetInputs()}
 
       ${this.fileUploaded ?
         html`
         <h3>Editor</h3>
-        ${this.showJsonEditor ?
-          html`
-          <button 
-          type="button"
-          @click="${this.hideJSONEditor}">
-          Show GUI Editor
-          </button>` :
-          html`
-          <button 
-          type="button"
-          @click="${this.showJSONEditor}">
-          Show JSON Editor
-          </button>`
-        }
+        ${this.renderJsonEditorButton()}
 
         <div
         style="display:${this.showJsonEditor ?
         "none":
         ""}">
-
-        <div>
-        Frame Rate:
-        <input
-        id="newframerate"
-        value="${this.content.fr}"
-        @change="${this.updateJson}">
-        </div>
-
-        ${(this.content.layers as Layer[]).map(layer => html`
-        <div>
-        <button
-        type="button"
-        class="layerbutton"
-        @click="${this.toggleContent}"
-        layername="${layer.nm}"
-        toggled="false">
-        ${layer.nm}
-        </button>
-        
-        <div
-        class="content"
-        id="${layer.nm} Content"
-        style="display:none">
           <div>
-          Visibility:
-          ${layer.ks.o.k === 0 ?
-          html`
+          Frame Rate:
           <input
-          type="checkbox"
-          id="${layer.nm} Visibility"
-          @click="${this.updateJson}">`:
-          html`
-          <input
-          type="checkbox"
-          id="${layer.nm} Visibility"
-          checked
-          @click="${this.updateJson}">`
-          }
-          </div>
-          ${layer.ty === 1 ?
-          html`
-          <br>
-          <div>
-          Color: <input
-          type="color"
-          id="${layer.nm} Color Input"
-          value="${layer.sc}"
+          id="newframerate"
+          value="${this.content.fr}"
           @change="${this.updateJson}">
-          </div>`:
-          ""
-          }
-          ${layer.ty === 4 ?
-          html`
-          <br>
-          ${(layer.shapes as any[]).map(shape => shape.ty === "fl" || shape.ty === "gr" ?
-          html`
-          <div>
-          <button
-          type="button"
-          class="layerbutton"
-          @click="${this.toggleContent}"
-          layername="${layer.nm+ ' ' +shape.nm}"
-          toggled="false">
-          ${shape.nm}
-          </button>
-          <div
-          class="content"
-          id="${layer.nm+ ' ' +shape.nm} Content"
-          style="display:none">
-            Color: <input
-            type="color"
-            id="${layer.nm + ' ' + shape.nm} Color Input"
-            value="${this.extractColor(shape)}"
-            @change="${this.updateJson}">
           </div>
-          </div>
-          `:
-          "")}
-          `:
-          ""}
-        </div>
-        
-        </div>`)}
+
+          ${(this.content.layers as Layer[]).map(layer => html`
+            <div>
+              ${this.renderLayerButton(layer)}
+              <div
+              class="content"
+              id="${layer.nm} Content"
+              style="display:none">
+                <div>
+                  Visibility:
+                  ${this.renderVisibilityCheckbox(layer)}
+                </div>
+                ${this.renderLayerColorContent(layer)}
+              </div>
+            </div>
+          `)}
         </div>`:
         ""
       }
@@ -353,7 +404,10 @@ export class SkottiePlayer extends LitElement {
     `;
   }
 
-  firstUpdated() {
+  /**
+   * Sets up the JSONEditor after the initial render.
+   */
+  firstUpdated(): void {
     if (this.shadowRoot) {
       const editorContainer = this.shadowRoot.getElementById('json-editor-container');
       if(editorContainer) {
@@ -386,11 +440,8 @@ export class SkottiePlayer extends LitElement {
    * Updates lottie player to play the uploaded json file.
    */
   updatePlayer(): void {
-    // Load the animation Lottie JSON file.
-    if (this._jsonUploaded() && this.content.assets && this.content.fonts &&
-      (this.assets as Map<string, any>).size === this._getNumAssets(this.content.assets) + this.content.fonts.list.length) {
+    if (this._shouldRenderAnimation()) {
       const loadLottie = fetch(this.fileUrl).then((resp) => resp.text());
-      console.log(this.assets);
       Promise.all([loadKit, loadLottie]).then((values: any) => {
         const [SkottieKit, lottieJSON] = values;
         const animation = SkottieKit.MakeManagedAnimation(lottieJSON, this.assets);
@@ -410,7 +461,6 @@ export class SkottiePlayer extends LitElement {
         if (parent) {
           parent.append(canvasElement);
           this.canvasSurface = SkottieKit.MakeCanvasSurface('my-canvas');
-          this.fileChanged = false;
         }
   
         const surface = (this.canvasSurface as any);
@@ -430,6 +480,11 @@ export class SkottiePlayer extends LitElement {
         }
         surface.requestAnimationFrame(drawFrame);
       });
+    } else {
+      const canvasElement = document.getElementById('my-canvas');
+      if (canvasElement) {
+        canvasElement.setAttribute('style', 'display:none');
+      }
     }
   }
 
@@ -453,12 +508,10 @@ export class SkottiePlayer extends LitElement {
             reader.readAsText(file);
             reader.onload = () => {
               this.setContent(JSON.parse(reader.result as string));
-              if (this.content.assets) {
-                this.assets = new Map<string, any>();
-              }
+              this.assets = {};
+              this.imageColors = {};
               this.fileString = JSON.stringify(this.content);
               this._loadJSONEditor();
-              this.fileChanged = true;
               this.updatePlayer();
               this.fileUploaded = true;
             };
@@ -468,34 +521,60 @@ export class SkottiePlayer extends LitElement {
     }
   }
 
+  /**
+   * Handles asset upload. Updates assets, color, and player based on
+   * file content.
+   */
   handleAssetUpload(e: Event): void {
     const assetInput = (e.composedPath()[0] as HTMLInputElement);
     const mapKey = assetInput.getAttribute('map-key');
-    if (assetInput && mapKey) {
+    const assetType = assetInput.getAttribute('asset-type')
+    if (assetInput && mapKey && assetType) {
       const files = assetInput.files;
       if (files) {
-        const reader = new FileReader();
-        reader.readAsArrayBuffer(files[0]);
-        reader.onload = () => {
-          console.log(reader.result);
-          (this.assets as Map<string, any>).set(mapKey, reader.result);
-          this.updatePlayer();
+        const file = files[0];
+        if (file) {
+          const reader = new FileReader();
+          
+          if (assetType === 'image') {
+            Promise.all([
+              createImageBitmap(file),
+            ]).then((imageBitmaps) => {
+              (this.imageColors as any)[mapKey] = colorThief.getColor(imageBitmaps[0]);
+            });
+          }
+
+          reader.readAsArrayBuffer(file);
+          reader.onload = () => {
+            (this.assets as any)[mapKey] = reader.result;
+            this.updatePlayer();
+          }
         }
       }
     }
   }
 
-
+  /**
+   * Loads content into the JSONEditor.
+   */
   _loadJSONEditor(): void {
-    (this.jsonEditor as JSONEditor).set(this.content)
+    (this.jsonEditor as JSONEditor).set(this.content);
   }
 
+  /**
+   * Shows the JSONEditor and hids the GUI editor. Also applies updates
+   * to the stored JSON data.
+   */
   showJSONEditor(): void {
     this.updateJson();
     this.showJsonEditor = true;
     this._loadJSONEditor();
   }
 
+  /**
+   * Shows the GUI editor and hides the JSON Editor. Also applies updates
+   * to the stored JSON data.
+   */
   hideJSONEditor(): void {
     this.updateJson();
     this.showJsonEditor = false;
@@ -506,58 +585,15 @@ export class SkottiePlayer extends LitElement {
    * changes in the editor.
    */
   updateJson(): void {
-    if (this.shadowRoot) {
+      // pull updated json
       if (this.showJsonEditor) {
-        console.log("JSON Editor");
-        const editor = this.shadowRoot.getElementById('json-editor-container');
-        if (editor) {
-          // pull updated json
-          this.setContent((this.jsonEditor as JSONEditor).get());
-          this.fileString = (this.jsonEditor as JSONEditor).getText();
-        }
+        this._updateJsonWithEditor();
       } else {
-        console.log("GUI Editor");
-        // pull updated json
-        const framerateInput = (this.shadowRoot.getElementById('newframerate') as HTMLInputElement);
-        if (framerateInput && framerateInput.value) {
-          this.content.fr = parseFloat(framerateInput.value);
-        }
-        if (this.content.layers) {
-          for(let i = 0; i < this.content.layers.length; i++) {
-            const layerVisibility = 
-              this.shadowRoot.getElementById(this.content.layers[i].nm + 
-                ' Visibility') as HTMLInputElement;
-            if (layerVisibility) {
-              if (layerVisibility.checked) {
-                this.content.layers[i].ks.o.k = 100;
-              } else {
-                this.content.layers[i].ks.o.k = 0;
-              }
-            }
-
-            if (this.content.layers[i].ty === 1) {
-              const colorInput = 
-                this.shadowRoot.getElementById(this.content.layers[i].nm + 
-                  ' Color Input') as HTMLInputElement;
-              if(colorInput) {
-                if (colorInput.value) {
-                  this.content.layers[i].sc = colorInput.value;
-                }
-              }
-            } else if (this.content.layers[i].ty === 4) {
-              const colorInput = 
-                this.shadowRoot.getElementById(this.content.layers[i].nm + 
-                  ' ' + (this.content.layers[i].shapes as any)[0].nm +
-                  ' Color Input') as HTMLInputElement;
-              if (colorInput) {
-                this._setShapeColor((this.content.layers[i].shapes as any)[0],
-                  this._hexToRgba(colorInput.value));
-              }
-            }
-          }
-          this.fileString = JSON.stringify(this.content);
-        }
+        this._updateJsonFramerate();
+        this._updateJsonLayers();
       }
+      this.fileString = JSON.stringify(this.content);
+
       // update download link
       URL.revokeObjectURL(this.fileUrl);
       this.fileUrl = URL.createObjectURL(new Blob([this.fileString]));
@@ -565,7 +601,6 @@ export class SkottiePlayer extends LitElement {
       // update animation
       lottiePlayer.destroy();
       this.updatePlayer();
-    }
   }
   
   /**
@@ -607,7 +642,7 @@ export class SkottiePlayer extends LitElement {
    * Converts rgba array into a hex color string. The alpha channel is ignored
    * as its use is not supported.
    * 
-   * @param rgba  Has a length of 4, values range from [0, 1]
+   * @param rgba  Has a length of 4, values in range [0, 1]
    */
   _rgbaToHex(rgba: Array<number>): String {
     const r = this._colorToString(rgba[0]);
@@ -620,7 +655,7 @@ export class SkottiePlayer extends LitElement {
   /**
    * Extracts color hex string from a shape object.
    * 
-   * @param shape   type can be fill or group
+   * @param shape   Type can be fill or group
    */
   extractColor(shape: any): String {
     if (shape.ty === 'gr' && shape.it) {
@@ -637,6 +672,91 @@ export class SkottiePlayer extends LitElement {
     return '';
   }
 
+  /**
+   * Updates the conent object using changes made with the JSONEditor.
+   */
+  _updateJsonWithEditor(): void {
+    if(this.shadowRoot) {
+      const editor = this.shadowRoot.getElementById('json-editor-container');
+      if (editor) {
+        this.setContent((this.jsonEditor as JSONEditor).get());
+      }
+    }
+  }
+
+  /**
+   * Updates the framerate in the content object.
+   */
+  _updateJsonFramerate(): void {
+    if (this.shadowRoot) {
+      const framerateInput = (this.shadowRoot.getElementById('newframerate') as HTMLInputElement);
+      if (framerateInput && framerateInput.value) {
+        this.content.fr = parseFloat(framerateInput.value);
+      }
+    }
+  }
+
+  /**
+   * Updates the layers in the content object.
+   */
+  _updateJsonLayers(): void {
+    if (this.content.layers) {
+      for(let i = 0; i < this.content.layers.length; i++) {
+        this._updateLayerVisibility(i);
+        this._updateLayerColor(i);
+      }
+    }
+  }
+
+  /**
+   * Updates the visibilty of the layer with given index in the layer array.
+   */
+  _updateLayerVisibility(layerIndex: number): void {
+    if (this.shadowRoot && this.content.layers) {
+      const layerVisibility = this.shadowRoot.getElementById(this.content.layers[layerIndex].nm + 
+        ' Visibility') as HTMLInputElement;
+      if (layerVisibility) {
+        if (layerVisibility.checked) {
+          this.content.layers[layerIndex].ks.o.k = 100;
+        } else {
+          this.content.layers[layerIndex].ks.o.k = 0;
+        }
+      }
+    }
+  }
+
+  /**
+   * Updates the color of the layer with given index in the layer array.
+   */
+  _updateLayerColor(layerIndex: number): void {
+    if (this.shadowRoot && this.content.layers) {
+      if (this.content.layers[layerIndex].ty === 1) {
+        const colorInput = this.shadowRoot.getElementById(this.content.layers[layerIndex].nm + 
+            ' Color Input') as HTMLInputElement;
+        if (colorInput) {
+          this.content.layers[layerIndex].sc = colorInput.value;
+        }
+      } else if (this.content.layers[layerIndex].ty === 4) {
+        for (let shapeIndex = 0; 
+          shapeIndex < (this.content.layers[layerIndex].shapes as any).length;
+          shapeIndex++) {
+          const colorInput = this.shadowRoot.getElementById(this.content.layers[layerIndex].nm + 
+              ' ' + (this.content.layers[layerIndex].shapes as any)[shapeIndex].nm +
+              ' Color Input') as HTMLInputElement;
+          if (colorInput) {
+            this._setShapeColor((this.content.layers[layerIndex].shapes as any)[shapeIndex],
+              this._hexToRgba(colorInput.value));
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Sets the color of a given shape.
+   * @param shape   Type can be fill or group
+   * @param rgba    Has a length of 4, values in range [0, 1]
+   */
   _setShapeColor(shape: any, rgba: Array<number>): void {
     if (shape.ty === 'gr' && shape.it) {
       for (let i = 0; i < shape.it.length; i++) {
@@ -648,6 +768,9 @@ export class SkottiePlayer extends LitElement {
     }
   }
 
+  /**
+   * Converts a hex string to a rgba array.
+   */
   _hexToRgba(hex: string): Array<number> {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
     const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -655,13 +778,9 @@ export class SkottiePlayer extends LitElement {
     return [r, g, b, 1];
   }
 
-  _jsonUploaded(): boolean {
-    if (this.content.assets) {
-      return true;
-    }
-    return false;
-  }
-
+  /**
+   * Gets the number of image assets from an array of required assets.
+   */
   _getNumAssets(assets: Array<any>): number {
     let length = 0;
     for (let i = 0; i < assets.length; i++) {
@@ -670,6 +789,19 @@ export class SkottiePlayer extends LitElement {
       }
     }
     return length;
+  }
+
+  /**
+   * Determines if the animation should be rendered.
+   */
+  _shouldRenderAnimation(): boolean {
+    if (this.content.fonts) {
+      return this.content.assets && this.content.fonts &&
+        Object.keys(this.assets).length === this._getNumAssets(this.content.assets) + 
+        this.content.fonts.list.length;
+    }
+    return (this.content.assets != undefined) && 
+      Object.keys(this.assets).length === this._getNumAssets(this.content.assets);
   }
 }
 

@@ -43,6 +43,7 @@
   "dependencies": {
     "@types/canvaskit-wasm": "^0.9.0",
     "canvaskit-wasm": "^0.17.2",
+    "color-thief": "^2.2.5",
     "jsoneditor": "^9.0.3",
     "lit-element": "^2.3.1",
     "lit-html": "^1.2.1",
