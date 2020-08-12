@@ -44,10 +44,13 @@
     "@types/canvaskit-wasm": "^0.9.0",
     "canvaskit-wasm": "^0.17.2",
     "color-thief": "^2.2.5",
+    "hsv-rgb": "^1.0.0",
     "jsoneditor": "^9.0.3",
     "lit-element": "^2.3.1",
     "lit-html": "^1.2.1",
     "lottie-web": "^5.7.0",
+    "rgb-hsv": "^1.0.0",
+    "rgb-lab": "^1.0.0",
     "skottiekit-wasm": "^0.1.1"
   }
 }
