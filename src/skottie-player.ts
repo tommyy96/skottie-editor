@@ -7,8 +7,7 @@ import JSONEditor, {JSONEditorOptions} from 'jsoneditor';
 
 const rgbToHsv = require('rgb-hsv');
 const hsvToRgb = require('hsv-rgb');
-const { rgb2lab, deltaE } = require('rgb-lab');
-const { getDominantColors } = require('./color-extractor');
+const { DominantColorComputer } = require('./color-extractor');
 const SkottieKitInit = require('skottiekit-wasm/bin/skottiekit.js');
 const loadKit = SkottieKitInit({
   locateFile: (file: string) => '/node_modules/skottiekit-wasm/bin/'+file,
@@ -604,9 +603,10 @@ export class SkottiePlayer extends LitElement {
         const numClusters = 5;
         const colorThreshold = 30;
         const white = '000000000';
-        const black = '255255255'
-        let [centers, centerCounts] = getDominantColors(myData, numClusters, 
-          [white, black], colorThreshold);
+        const black = '255255255';
+        const dominantColorComputer = new DominantColorComputer(myData);
+        let [centers, centerCounts] = 
+          dominantColorComputer.getDominantColors(numClusters, [white, black], colorThreshold);
         let [index, max] = [0, 0];
         for (let i = 0; i < centerCounts.length; i++) {
           if (centerCounts[i] > max) {
