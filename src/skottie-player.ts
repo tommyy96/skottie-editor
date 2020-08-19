@@ -358,23 +358,16 @@ export class SkottiePlayer extends LitElement {
   renderTextAssets(): TemplateResult | string {
     if (this.content.assets) {
       return html`
-        ${this.content.assets.map(asset => asset.layers !== undefined ?
+        ${this.content.assets.map(asset => asset.layers !== undefined 
+          && asset.layers[0].ty === 5 ?
           html`
-          ${(asset.layers as Layer[]).map(layer => layer.ty === 5 ?
-            layer.t.d?.k.map((el: { s: { t: any; }; }) => el.s.t !== undefined ?
-              html`
-              ${layer.nm}: 
-              <input
-              id="${asset.id + ' ' + layer.nm} Input"
-              type="text"
-              value="${el.s.t}"
-              @change="${this.updateJson}">
-              <br>
-              `:
-              ""  
-            ):
-            ""
-          )}
+            ${asset.layers[0].nm}: 
+            <input
+            id="${asset.id + ' ' + asset.layers[0].nm} Input"
+            type="text"
+            value="${asset.layers[0].t.d.k[0].s.t}"
+            @change="${this.updateJson}">
+            <br>
           `:
           ""
         )}
