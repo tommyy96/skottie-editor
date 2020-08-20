@@ -26,10 +26,10 @@ export class DominantColorComputer {
    * 
    * @param numClusters     Number of dominant colors to find
    * @param colorsToIgnore  Array of colors as rgb strings to ignore
-   *                        Format of rgb strings is [red][blue][green],
-   *                        where [red], [blue], and [green] are the values
-   *                        of the red, blue, and green channels represented as
-   *                        strings. Value range from 0 to 255 and are padded
+   *                        Format of rgb strings is [red][green][blue],
+   *                        where [red], [green], and [blue] are the values
+   *                        of the red, green, and blue channels represented as
+   *                        strings. Values range from 0 to 255 and are padded
    *                        with zeros in the front so each channel value has
    *                        length 3, and the rgb string has length 9.
    * @param threshold       Threshold for similarity in LAB color space
@@ -85,7 +85,7 @@ export class DominantColorComputer {
    * Pads a number string with zeros to be length 3.
    * 
    * @param channel  Number string representing one RGB channel, 
-   *               values from 0 to 255.
+   *                 values from 0 to 255.
    */
   private padColorString(channel: string) {
     while (channel.length < 3) {
@@ -182,7 +182,6 @@ class KMeansCalculator {
    * @param centers   Array of old centers.
    */
   private updateCenters(centers: Array<string>): Array<any> {
-
     // calculate new clusters
     const pointToCenter = this.getNewClusters(centers);
 

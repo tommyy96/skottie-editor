@@ -579,7 +579,7 @@ export class SkottiePlayer extends LitElement {
    * 
    * @param reader  Used when reading image as asset
    * @param file    Image file
-   * @param mapKey  Name of asset, should always be "Image_0.jpeg"
+   * @param mapKey  Name of asset
    */
   private updateColors(reader: FileReader, file: File, mapKey: string): void {
     const url = URL.createObjectURL(file);
