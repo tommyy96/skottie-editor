@@ -21,7 +21,7 @@ describe('getDominantColors', () => {
     expect(centers[0]).toBe('#ff0000');
   });
   it('2 colors, 2 centers', () => {
-    // creating an array with red and green pixels (#ff0000)
+    // creating an array with red and green pixels (#ff0000 and #00ff00)
     let array = new Uint8ClampedArray(160000);
     for (let i = 0; i < array.length / 2; i += 4) {
       array[i + 0] = 255;
@@ -46,25 +46,38 @@ describe('getDominantColors', () => {
     expect(centers).toContain('#00ff00');
   });
   it('Stress test, centers are colors in image', () => {
-    let array = new Uint8ClampedArray(640000);
+    // creating an array with 8 clusters with randomly generated colors
+    let array = new Uint8ClampedArray(10240000);
     let colors = [];
     for (let mult = 0; mult < 8; mult++) {
       for (let i = mult * (array.length / 8); 
           i < (mult + 1) * (array.length / 8);
           i += 4) {
-        array[i + 0] = Math.floor(Math.random() * 32) + 32 * mult;
-        array[i + 1] = Math.floor(Math.random() * 32) + 32 * mult;
-        array[i + 2] = Math.floor(Math.random() * 32) + 32 * mult;
+        array[i + 0] = Math.floor(Math.random() * 8) + 32 * mult;
+        array[i + 1] = Math.floor(Math.random() * 8) + 32 * mult;
+        array[i + 2] = Math.floor(Math.random() * 8) + 32 * mult;
         array[i + 3] = 255;
-        colors.push('#' + array[i].toString(16)
-                        + array[i + 1].toString(16)
-                        + array[i + 2].toString(16));
+        let redString = array[i].toString(16);
+        if (redString.length === 1) {
+          redString = '0' + redString;
+        }
+        let greenString = array[i + 1].toString(16);
+        if (greenString.length === 1) {
+          greenString = '0' + greenString;
+        }
+        let blueString = array[i + 2].toString(16);
+        if (blueString.length === 1) {
+          blueString = '0' + blueString;
+        }
+        colors.push('#' + redString
+                        + greenString
+                        + blueString);
       }
     }
-    const imageData = new ImageData(array, 200);
+    const imageData = new ImageData(array, 1000);
 
     const dominantColorComputer = new DominantColorComputer(imageData);
-    const numClusters = 4;
+    const numClusters = 8;
     const [centers,] = 
     dominantColorComputer.getDominantColors(numClusters, [], 0);
     expect(centers.length).toBe(numClusters);
