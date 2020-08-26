@@ -5,10 +5,14 @@
 import {css, customElement, html, LitElement, property, TemplateResult} from 'lit-element';
 import JSONEditor, {JSONEditorOptions} from 'jsoneditor';
 
+const rgbToHsv = require('rgb-hsv');
+const hsvToRgb = require('hsv-rgb');
+const { DominantColorComputer } = require('./color-extractor');
 const SkottieKitInit = require('skottiekit-wasm/bin/skottiekit.js');
 const loadKit = SkottieKitInit({
   locateFile: (file: string) => '/node_modules/skottiekit-wasm/bin/'+file,
 });
+
 
 /**
  * Layer types:
@@ -191,10 +195,13 @@ export class SkottiePlayer extends LitElement {
   private jsonEditor: any = {};
 
   /**
-   * 
+   * Stores the previous animation so it can be deleted.
    */
   private animation: any = {};
 
+  /**
+   * Boolean indicating if the animation has been rendered in the past.
+   */
   private animationUploaded: Boolean = false;
 
   /**
@@ -305,6 +312,7 @@ export class SkottiePlayer extends LitElement {
    */
   renderLayerColorContent(layer: Layer): TemplateResult|string {
     if (layer.ty === 1) {
+      // search through effects for fill effect
       return html`
         <br>
         <div>
@@ -312,11 +320,12 @@ export class SkottiePlayer extends LitElement {
           <input
           type="color"
           id="${layer.nm} Color Input"
-          value="${layer.sc}"
+          value="${this.extractSolidColor(layer)}"
           @change="${this.updateJson}">
         </div>
       `;
-    } else if (layer.ty  === 4) {
+    } else if (layer.ty === 4) {
+      // layer is shape layer
       return html`
         <br>
         ${(layer.shapes as any[]).map(shape => shape.ty === "fl" || shape.ty === "gr" ?
@@ -339,7 +348,7 @@ export class SkottiePlayer extends LitElement {
                 <input
                 type="color"
                 id="${layer.nm + ' ' + shape.nm} Color Input"
-                value="${this.extractColor(shape)}"
+                value="${this.extractShapeColor(shape)}"
                 @change="${this.updateJson}">
               </div>
             </div>
@@ -580,11 +589,160 @@ export class SkottiePlayer extends LitElement {
     const file = files?.[0];
     if (file && mapKey) {
       const reader = new FileReader();
-      reader.readAsArrayBuffer(file);
-      reader.onload = () => {
-        (this.assets as any)[mapKey] = reader.result;
-        this.updatePlayer();
+      if (mapKey === 'Image_0.jpeg') {
+        this.updateColors(reader, file, mapKey);
+      } else {
+        this.readAssetFile(reader, file, mapKey);
       }
+    }
+  }
+
+  /**
+   * Updates template colors based on an uploaded image. Also reads in the
+   * uploaded image as an image asset.
+   * 
+   * @param reader  Used when reading image as asset
+   * @param file    Image file
+   * @param mapKey  Name of asset
+   */
+  private updateColors(reader: FileReader, file: File, mapKey: string): void {
+    const url = URL.createObjectURL(file);
+    const oldCanvas = document.getElementById('canvas');
+    if (oldCanvas) {
+      oldCanvas.remove();
+    }
+    const img = new Image();
+    img.onload = () => { 
+      const canvasElement = document.createElement('canvas');
+      canvasElement.setAttribute('id', 'canvas');
+      canvasElement.setAttribute('width', this.width.toString());
+      canvasElement.setAttribute('height', this.height.toString());
+      const context = canvasElement.getContext('2d');
+      if (context) {
+        context.drawImage(img, 0, 0, 
+          img.width * this.height / img.height, this.height);
+        const myData = context.getImageData(0, 0,
+          img.width * this.height / img.height, this.height);
+        
+        const numClusters = 5;
+        const colorThreshold = 30;
+        const white = '000000000';
+        const black = '255255255';
+        const dominantColorComputer = new DominantColorComputer(myData);
+        let [centers, centerCounts] = 
+          dominantColorComputer.getDominantColors(numClusters, [white, black], colorThreshold);
+        let [index, max] = [0, 0];
+        for (let i = 0; i < centerCounts.length; i++) {
+          if (centerCounts[i] > max) {
+            max = centerCounts[i];
+            index = i;
+          }
+        }
+        const color = centers[index];
+        console.log(color);
+        console.log(centers);
+
+        this.setTemplateColors(color);
+        this.updateJson();
+        this.readAssetFile(reader, file, mapKey);
+      }
+      URL.revokeObjectURL(url);
+    }
+    img.src = url;
+  }
+
+  /**
+   * Sets colors used in a template based on a base hex color. 
+   */
+  private setTemplateColors(color: any): void {
+    color = this.hexToRgb(color)
+    for (let i = 0; i < color.length; i++) {
+      color[i] *= 255;
+    }
+    color = rgbToHsv(color[0], color[1], color[2]);
+    let secondaryColor = color.slice();
+    let backgroundColor = color.slice();
+
+    if (color[0] < 500) {
+      secondaryColor[2] -= 15;
+      secondaryColor[1] += 15;
+      backgroundColor[2] -= 40;
+    } else if (color[0] < 800) {
+      secondaryColor[2] += 15;
+      backgroundColor[2] -= 15;
+    } else {
+      secondaryColor[2] += 30;
+      secondaryColor[1] -= 15;
+      backgroundColor[2] -= 15;
+      backgroundColor[1] -= 15;
+    }
+
+    color = hsvToRgb(color[0], color[1], color[2]);
+    backgroundColor = hsvToRgb(backgroundColor[0], backgroundColor[1],
+      backgroundColor[2]);
+    secondaryColor = hsvToRgb(secondaryColor[0], secondaryColor[1],
+      secondaryColor[2]);
+    for (let j = 0; j < color.length; j++) {
+      color[j] /= 255;
+      backgroundColor[j] /= 255;
+      secondaryColor[j] /= 255;
+    }
+    color.push(1);
+    backgroundColor.push(1);
+    secondaryColor.push(1);
+
+    this.updateTemplateColors(color, secondaryColor, backgroundColor);    
+  }
+
+  /**
+   * Updates colors used in a template with the given colors. Colors are 
+   * represented as number arrays of length 3.
+   */
+  private updateTemplateColors(color: Array<number>, secondaryColor: Array<number>,
+    backgroundColor: Array<number>): void {
+    if (this.content.layers) {
+      for (let i = 0; i < this.content.layers.length; i++) {
+        if (this.content.layers[i].nm?.slice(0, 17) === 'Transition_Color_') {
+          const num = this.content.layers[i].nm?.slice(-2);
+          if (num && parseInt(num) % 2 == 0) {
+            (this.content.layers[i].ef as any)[0].ef[2].v.k = secondaryColor;
+            const colorInput = 
+              this.shadowRoot?.getElementById(this.content.layers[i].nm +
+              ' Color Input');
+            if (colorInput) {
+              colorInput.setAttribute('value', this.rgbaToHex(secondaryColor));
+            }
+          } else if (num) {
+            (this.content.layers[i].ef as any)[0].ef[2].v.k = color;
+            const colorInput =
+              this.shadowRoot?.getElementById(this.content.layers[i].nm +
+              ' Color Input');
+            if (colorInput) {
+              colorInput.setAttribute('value', this.rgbaToHex(color));
+            }
+          }
+        } else if(this.content.layers[i].nm === 'BG_Color') {
+          (this.content.layers[i].ef as any)[0].ef[2].v.k = backgroundColor;
+          const colorInput = 
+            this.shadowRoot?.getElementById(this.content.layers[i].nm +
+            ' Color Input');
+          if (colorInput) {
+            colorInput.setAttribute('value', this.rgbaToHex(backgroundColor));
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Reads in an asset file as an ArrayBuffer. Stores the read file in the 
+   * assets object and updates the player.
+   */
+  private readAssetFile(reader: FileReader, file: File, mapKey: string): void {
+    reader.readAsArrayBuffer(file);
+    reader.onload = () => {
+      (this.assets as any)[mapKey] = reader.result;
+      this.updatePlayer();
     }
   }
 
@@ -662,7 +820,7 @@ export class SkottiePlayer extends LitElement {
    * 
    * @param color   Has a range of [0,1]
    */
-  private colorToString(color: number): String {
+  private colorToString(color: number): string {
     let string = (color * 255).toString(16);
     if (string.length === 1) {
       string = '0' + string;
@@ -678,7 +836,7 @@ export class SkottiePlayer extends LitElement {
    * 
    * @param rgba  Has a length of 4, values in range [0, 1]
    */
-  private rgbaToHex(rgba: Array<number>): String {
+  private rgbaToHex(rgba: Array<number>): string {
     const r = this.colorToString(rgba[0]);
     const g = this.colorToString(rgba[1]);
     const b = this.colorToString(rgba[2]);
@@ -691,7 +849,7 @@ export class SkottiePlayer extends LitElement {
    * 
    * @param shape   Type can be fill or group
    */
-  extractColor(shape: any): String {
+  extractShapeColor(shape: any): string {
     if (shape.ty === 'gr' && shape.it) {
       for (let i = 0; i < shape.it.length; i++) {
         if (shape.it[i].ty === 'fl') {
@@ -702,6 +860,31 @@ export class SkottiePlayer extends LitElement {
       if (shape.ty === 'fl') {
         return this.rgbaToHex(shape.c.k);
       }
+    }
+    return '';
+  }
+
+  /**
+   * Extracts color from a solid layer.
+   * @param layer  Type is solid.
+   */
+  extractSolidColor(layer: Layer): string {
+    const efLength = layer.ef?.length;
+    if (efLength) {
+      for (let i = 0; i < efLength; i++) {
+        if (layer.ef?.[i].ty === 2) {
+          return this.rgbaToHex(layer.ef?.[i].v.k);
+        } else if (layer.ef?.[i].ty === 21) {
+          for (let j = 0; j < layer.ef?.[i].ef.length; j++) {
+            if (layer.ef?.[i].ef[j].ty === 2) {
+              return this.rgbaToHex(layer.ef?.[i].ef[j].v.k);
+            }
+          }
+        }
+      }
+    }
+    if (layer.sc) {
+      return layer.sc;
     }
     return '';
   }
@@ -754,7 +937,7 @@ export class SkottiePlayer extends LitElement {
    */
   private updateJsonLayers(): void {
     if (this.content.layers) {
-      for(let i = 0; i < this.content.layers.length; i++) {
+      for (let i = 0; i < this.content.layers.length; i++) {
         this.updateLayerVisibility(i);
         this.updateLayerColor(i);
       }
@@ -773,7 +956,7 @@ export class SkottiePlayer extends LitElement {
       } else {
         this.content.layers[layerIndex].ks.o.k = 0;
       }
-      }
+    }
   }
 
   /**
@@ -799,6 +982,7 @@ export class SkottiePlayer extends LitElement {
 
   /**
    * Sets the color of a given shape.
+   * 
    * @param shape   Type can be fill or group
    * @param rgba    Has a length of 4, values in range [0, 1]
    */
@@ -824,12 +1008,22 @@ export class SkottiePlayer extends LitElement {
   }
 
   /**
+   * Converts a hex string to a rgb array.
+   */
+  private hexToRgb(hex: string): Array<number> {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return [r, g, b];
+  }
+
+  /**
    * Gets the number of image assets from an array of required assets.
    */
   private getNumAssets(assets: Array<any>): number {
     let length = 0;
     for (let i = 0; i < assets.length; i++) {
-      if(assets[i].p != undefined) {
+      if (assets[i].p != undefined) {
         length++;
       }
     }
