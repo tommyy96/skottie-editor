@@ -1,6 +1,6 @@
 *.DS_Store*
 node_modules/*
-skottie-player.d.ts
-skottie-player.d.ts.map
+*.d.ts
+*.d.ts.map
 skottie-player.js
 skottie-player.js.map
