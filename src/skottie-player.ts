@@ -361,7 +361,29 @@ export class SkottiePlayer extends LitElement {
     }
   }
 
-  
+  /**
+   * Renders text inputs to change text assets in the animation.
+   */
+  renderTextAssets(): TemplateResult | string {
+    if (this.content.assets) {
+      return html`
+        ${this.content.assets.map(asset => asset.layers !== undefined 
+          && asset.layers[0].ty === 5 ?
+          html`
+            ${asset.layers[0].nm}: 
+            <input
+            id="${asset.id + ' ' + asset.layers[0].nm} Input"
+            type="text"
+            value="${asset.layers[0].t.d.k[0].s.t}"
+            @change="${this.updateJson}">
+            <br>
+          `:
+          ""
+        )}
+      `;
+    }
+    return '';
+  }
 
   render(): TemplateResult {
     return html`
@@ -415,6 +437,8 @@ export class SkottiePlayer extends LitElement {
             value="${this.content.fr}"
             @change="${this.updateJson}">
             </div>
+
+            ${this.renderTextAssets()}
 
             ${(this.content.layers as Layer[]).map(layer => 
               html`
@@ -758,6 +782,7 @@ export class SkottiePlayer extends LitElement {
         this.setContent((this.jsonEditor as JSONEditor).get());
       } else {
         this.updateJsonFramerate();
+        this.updateJsonTextAssets();
         this.updateJsonLayers();
       }
       this.fileString = JSON.stringify(this.content);
@@ -871,6 +896,39 @@ export class SkottiePlayer extends LitElement {
     const framerateInput = (this.shadowRoot?.getElementById('newframerate') as HTMLInputElement);
     if (framerateInput.value) {
       this.content.fr = parseFloat(framerateInput.value);
+    }
+  }
+
+  /**
+   * Updates the text assets in the content object.
+   */
+  private updateJsonTextAssets(): void {
+    if (this.content.assets) {
+      for (let i = 0; i < this.content.assets.length; i++) {
+        if (this.content.assets[i].layers) {
+          for (let j = 0; j < this.content.assets[i].layers.length; j++) {
+            this.updateAssetText(i, j);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Updates a specific text asset in the content object.
+   */
+  private updateAssetText(assetIndex: number, layerIndex: number): void {
+    if (this.content.assets && this.content.assets[assetIndex].layers) {
+      const textInput = (this.shadowRoot?.getElementById(this.content.assets[assetIndex].id
+        + ' ' + this.content.assets[assetIndex].layers[layerIndex].nm + ' Input') as HTMLInputElement);
+      if (textInput && this.content.assets[assetIndex].layers[layerIndex].t.d.k) {
+        for (let i = 0; i < this.content.assets[assetIndex].layers[layerIndex].t.d.k.length; i++) {
+          if (this.content.assets[assetIndex].layers[layerIndex].t.d.k[i].s) {
+            this.content.assets[assetIndex].layers[layerIndex].t.d.k[i].s.t = textInput.value;
+            return;
+          }
+        }
+      }
     }
   }
 
