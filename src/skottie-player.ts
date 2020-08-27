@@ -4,6 +4,7 @@
 
 import {css, customElement, html, LitElement, property, TemplateResult} from 'lit-element';
 import JSONEditor, {JSONEditorOptions} from 'jsoneditor';
+import {BodySegmenter} from './body-segmenter';
 
 const rgbToHsv = require('rgb-hsv');
 const hsvToRgb = require('hsv-rgb');
@@ -203,6 +204,8 @@ export class SkottiePlayer extends LitElement {
    * Boolean indicating if the animation has been rendered in the past.
    */
   private animationUploaded: Boolean = false;
+
+  private bodySegmenter: BodySegmenter = new BodySegmenter();
 
   /**
    * Renders asset input buttons after json upload.
@@ -489,6 +492,46 @@ export class SkottiePlayer extends LitElement {
     }
   }
 
+  private bodySegment(reader: FileReader, file: File, mapKey: string): void {
+    const url = URL.createObjectURL(file);
+    const oldCanvas = document.getElementById('canvas');
+    if (oldCanvas) {
+      oldCanvas.remove();
+    }
+    const img = new Image();
+    img.onload = () => { 
+      const canvasElement = document.createElement('canvas');
+      canvasElement.setAttribute('id', 'canvas');
+      canvasElement.setAttribute('width', img.width.toString());
+      canvasElement.setAttribute('height', img.height.toString());
+      const context = canvasElement.getContext('2d');
+      if (context) {
+        context.drawImage(img, 0, 0, 
+          img.width, img.height);
+        let myData = context.getImageData(0, 0,
+          img.width, img.height);
+        console.log('segmenting');
+        this.bodySegmenter.segmentPerson(myData).then((result) => {
+          console.log('segmented');
+          for (let i = 0; i < result.length; i++) {
+            if (result[i] === 0) {
+              myData.data[i * 4 + 3] = 0;
+            }
+          }
+          context.putImageData(myData, 0, 0);
+          canvasElement.toBlob((blob) => {
+            if (blob != null) {
+              this.readAssetFile(reader, blob, 'img_3.png');
+            }
+          });
+          this.updateJson();
+          this.readAssetFile(reader, file, mapKey);
+          URL.revokeObjectURL(url);
+        });
+      }
+    }
+    img.src = url;
+  }
 
   /**
    * Sets content object as well as width and height.
@@ -588,9 +631,14 @@ export class SkottiePlayer extends LitElement {
     const files = assetInput.files;
     const file = files?.[0];
     if (file && mapKey) {
+      if (mapKey === 'img_3.png') {
+        return;
+      }
       const reader = new FileReader();
       if (mapKey === 'Image_0.jpeg') {
         this.updateColors(reader, file, mapKey);
+      } else if (mapKey === 'img_1.png') {
+        this.bodySegment(reader, file, mapKey)
       } else {
         this.readAssetFile(reader, file, mapKey);
       }
@@ -738,7 +786,7 @@ export class SkottiePlayer extends LitElement {
    * Reads in an asset file as an ArrayBuffer. Stores the read file in the 
    * assets object and updates the player.
    */
-  private readAssetFile(reader: FileReader, file: File, mapKey: string): void {
+  private readAssetFile(reader: FileReader, file: File|Blob, mapKey: string): void {
     reader.readAsArrayBuffer(file);
     reader.onload = () => {
       (this.assets as any)[mapKey] = reader.result;
