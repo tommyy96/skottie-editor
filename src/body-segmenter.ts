@@ -9,7 +9,9 @@ export class BodySegmenter {
 
   async segmentPerson(image: 
     ImageData|HTMLImageElement|HTMLCanvasElement|HTMLVideoElement) {
-    const segmentation = await this.net.segmentPerson(image);
+    const segmentation = await this.net.segmentPerson(image, {
+      internalResolution: 'full'
+    });
     return segmentation.data;
   }
 
