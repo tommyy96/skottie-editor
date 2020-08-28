@@ -205,7 +205,29 @@ export class SkottiePlayer extends LitElement {
    */
   private animationUploaded: Boolean = false;
 
+  /**
+   * For performing body segmentation.
+   */
   private bodySegmenter: BodySegmenter = new BodySegmenter();
+
+  /**
+   * Set of names of assets to extract dominant color from.
+   */
+  private extractColorAssetNames: Set<string> =
+    new Set<string>(['Image_0.jpeg']);
+
+  /**
+   * Map from original image asset names to create body segmented masks from
+   * to asset names of body segmented masks.
+   */
+  private segmentBodyAssetMap: Map<string, string> =
+    new Map<string, string>([['img_1.png', 'img_3.png']]);
+  
+  /**
+   * Set of asset names of body segmented masks.
+   */
+  private segmentBodyAssetValues: Set<string> = 
+    new Set(this.segmentBodyAssetMap.values());
 
   /**
    * Renders asset input buttons after json upload.
@@ -492,7 +514,17 @@ export class SkottiePlayer extends LitElement {
     }
   }
 
-  private bodySegment(reader: FileReader, file: File, mapKey: string): void {
+  /**
+   * Finds the bodies of people in an an image and creates a new image with 
+   * only the bodies.
+   * 
+   * @param reader      Used when reading image as asset
+   * @param file        Image file
+   * @param mapKey      Name of original asset
+   * @param maskMapKey  Name of mask asset
+   */
+  private bodySegment(reader: FileReader, file: File, mapKey: string,
+    maskMapKey: string): void {
     const url = URL.createObjectURL(file);
     const oldCanvas = document.getElementById('canvas');
     if (oldCanvas) {
@@ -510,9 +542,7 @@ export class SkottiePlayer extends LitElement {
           img.width, img.height);
         let myData = context.getImageData(0, 0,
           img.width, img.height);
-        console.log('segmenting');
         this.bodySegmenter.segmentPerson(myData).then((result) => {
-          console.log('segmented');
           for (let i = 0; i < result.length; i++) {
             if (result[i] === 0) {
               myData.data[i * 4 + 3] = 0;
@@ -521,7 +551,7 @@ export class SkottiePlayer extends LitElement {
           context.putImageData(myData, 0, 0);
           canvasElement.toBlob((blob) => {
             if (blob != null) {
-              this.readAssetFile(reader, blob, 'img_3.png');
+              this.readAssetFile(reader, blob, maskMapKey);
             }
           });
           this.updateJson();
@@ -631,14 +661,16 @@ export class SkottiePlayer extends LitElement {
     const files = assetInput.files;
     const file = files?.[0];
     if (file && mapKey) {
-      if (mapKey === 'img_3.png') {
+      if (this.segmentBodyAssetValues.has(mapKey)) {
         return;
       }
       const reader = new FileReader();
-      if (mapKey === 'Image_0.jpeg') {
+      const value = this.segmentBodyAssetMap.get(mapKey);
+      if (value) {
+        this.bodySegment(reader, file, mapKey, value);
+      }
+      if (this.extractColorAssetNames.has(mapKey)) {
         this.updateColors(reader, file, mapKey);
-      } else if (mapKey === 'img_1.png') {
-        this.bodySegment(reader, file, mapKey)
       } else {
         this.readAssetFile(reader, file, mapKey);
       }
