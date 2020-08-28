@@ -10,7 +10,7 @@ const { rgb2lab, deltaE } = require('rgb-lab');
  */
 export class DominantColorComputer {
   private colorFilter: ColorFilter;
-  private kMeansCalculator: KMeansCalculator
+  private kMeansCalculator: KMeansCalculator;
 
   constructor(data: ImageData) {
     const [dataMap, keyArray, pixelCount] = this.getDataMap(data);
@@ -78,7 +78,7 @@ export class DominantColorComputer {
         total++;
       }
     }
-    return [dataMap, keyArray, total]
+    return [dataMap, keyArray, total];
   }
 
   /**
@@ -222,7 +222,7 @@ class KMeansCalculator {
       }
       pointToCenter.push(currCenter);
     }
-    return pointToCenter
+    return pointToCenter;
   }
   
   /**
@@ -326,7 +326,7 @@ class ColorFilter {
         centerCounts.splice(i, 1);
       }
     }
-    return [centers, centerCounts]
+    return [centers, centerCounts];
   }
 
   /**
