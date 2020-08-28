@@ -542,9 +542,11 @@ export class SkottiePlayer extends LitElement {
           img.width, img.height);
         let myData = context.getImageData(0, 0,
           img.width, img.height);
-        this.bodySegmenter.segmentPerson(myData).then((result) => {
-          for (let i = 0; i < result.length; i++) {
-            if (result[i] === 0) {
+        this.bodySegmenter.segmentPerson(myData).then((mask) => {
+          for (let i = 0; i < mask.length; i++) {
+            if (mask[i] === 0) {
+              // change the alpha value of pixels to 0 if the pixel 
+              // is not part of a body
               myData.data[i * 4 + 3] = 0;
             }
           }
