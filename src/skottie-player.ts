@@ -4,6 +4,7 @@
 
 import {css, customElement, html, LitElement, property, TemplateResult} from 'lit-element';
 import JSONEditor, {JSONEditorOptions} from 'jsoneditor';
+import {FaceBounder} from './face-bounder'
 
 const rgbToHsv = require('rgb-hsv');
 const hsvToRgb = require('hsv-rgb');
@@ -205,6 +206,11 @@ export class SkottiePlayer extends LitElement {
   private animationUploaded: Boolean = false;
 
   /**
+   * For finding face boundaries.
+   */
+  private faceBounder: FaceBounder = new FaceBounder();
+
+  /**
    * Renders asset input buttons after json upload.
    */
   renderAssetInputs(): TemplateResult {
@@ -377,6 +383,13 @@ export class SkottiePlayer extends LitElement {
             value="${asset.layers[0].t.d.k[0].s.t}"
             @change="${this.updateJson}">
             <br>
+            ${asset.layers[0].nm} text size:
+            <input
+            id="${asset.id + ' ' + asset.layers[0].nm + ' size'} Input"
+            type="number"
+            value="${parseFloat(asset.layers[0].t.d.k[0].s.s)}"
+            @change="${this.updateJson}">
+            <br>
           `:
           ""
         )}
@@ -439,6 +452,13 @@ export class SkottiePlayer extends LitElement {
             </div>
 
             ${this.renderTextAssets()}
+
+            <button
+            type="button"
+            @click="${this.repositionText}">
+              Reposition Text
+            </button>
+            <br>
 
             ${(this.content.layers as Layer[]).map(layer => 
               html`
@@ -753,6 +773,70 @@ export class SkottiePlayer extends LitElement {
     (this.jsonEditor as JSONEditor).set(this.content);
   }
 
+  repositionText(): void {
+    const oldCanvas = document.getElementById('canvas');
+    if (oldCanvas) {
+      oldCanvas.remove();
+    }
+
+    const fileInput = (this.shadowRoot?.getElementById('img_1.png-input') as HTMLInputElement);
+    const file = fileInput.files?.[0];
+    if (file) {
+      createImageBitmap(file).then((bitmap) => {
+        const canvasElement = document.createElement('canvas');
+        canvasElement.setAttribute('id', 'canvas');
+        canvasElement.setAttribute('width', bitmap.width.toString());
+        canvasElement.setAttribute('height', bitmap.height.toString());
+        const context = canvasElement.getContext('2d');
+        if (context) {
+          context.drawImage(bitmap, 0, 0);
+          this.faceBounder.getFaceBounds(canvasElement).then((result) => {
+            const gutterSize = 24;
+            const columnWidth = (this.width - (gutterSize * 13)) / 12;
+            const rowHeight = (this.height - (gutterSize * 13)) / 12;
+            let topLeft = [this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0] + this.width / 2,
+                           this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1] + this.height / 2];
+            let bottomRight = [topLeft[0] + this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0],
+                               topLeft[1] + this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]];
+            const height = bottomRight[0] - topLeft[0];
+            const width = bottomRight[1] - topLeft[1];
+            for (let i = 0; i < result.length; i++) {
+              if (result[i].bottomRight[0] > topLeft[0] && result[i].bottomRight[1] > topLeft[1]
+                && result[i].topLeft[0] < bottomRight[0] && result[i].topLeft[1] < bottomRight[1]) {
+                // area left of left
+                // right of right
+                // top of top
+                // bottom of bottom
+                const areas = [(bottomRight[1] - result[i].topLeft[1]) * height,
+                               (result[i].bottomRight[1] - topLeft[1]) * height,
+                               (bottomRight[0] - result[i].topLeft[0]) * width,
+                               (result[i].bottomRight[0] - topLeft[0]) * width]
+                const minIndex = areas.indexOf(Math.min(...areas));
+                if (minIndex === 0) {
+                  bottomRight[1] = result[i].topLeft[1];
+                } else if (minIndex === 1) {
+                  topLeft[1] = result[i].bottomRight[1];
+                } else if (minIndex === 2) {
+                  bottomRight[0] = result[i].topLeft[0];
+                } else if (minIndex === 3) {
+                  topLeft[0] = result[i].bottomRight[0];
+                }
+              }
+            }
+            if (this.content.assets) {
+              this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = bottomRight[1] - topLeft[1];
+              this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = bottomRight[0] - topLeft[0];
+              this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = topLeft[0] - this.width / 2;
+              this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = topLeft[1] - this.height / 2;
+            }
+            console.log(result);
+            console.log(topLeft, bottomRight);
+          });
+        }
+      })
+    }
+  }
+
   /**
    * Shows the JSONEditor and hids the GUI editor. Also applies updates
    * to the stored JSON data.
@@ -921,10 +1005,13 @@ export class SkottiePlayer extends LitElement {
     if (this.content.assets && this.content.assets[assetIndex].layers) {
       const textInput = (this.shadowRoot?.getElementById(this.content.assets[assetIndex].id
         + ' ' + this.content.assets[assetIndex].layers[layerIndex].nm + ' Input') as HTMLInputElement);
-      if (textInput && this.content.assets[assetIndex].layers[layerIndex].t.d.k) {
+      const sizeInput = (this.shadowRoot?.getElementById(this.content.assets[assetIndex].id
+        + ' ' + this.content.assets[assetIndex].layers[layerIndex].nm + ' size Input') as HTMLInputElement);
+      if (textInput && sizeInput && this.content.assets[assetIndex].layers[layerIndex].t.d.k) {
         for (let i = 0; i < this.content.assets[assetIndex].layers[layerIndex].t.d.k.length; i++) {
           if (this.content.assets[assetIndex].layers[layerIndex].t.d.k[i].s) {
             this.content.assets[assetIndex].layers[layerIndex].t.d.k[i].s.t = textInput.value;
+            this.content.assets[assetIndex].layers[layerIndex].t.d.k[i].s.s = sizeInput.valueAsNumber;
             return;
           }
         }
