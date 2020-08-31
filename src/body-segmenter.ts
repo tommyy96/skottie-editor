@@ -2,6 +2,7 @@ const bodyPix = require('@tensorflow-models/body-pix');
 
 /**
  * Wrapper class for BodyPix model.
+ * https://github.com/tensorflow/tfjs-models/tree/master/body-pix
  */
 export class BodySegmenter {
   private net: any;
