@@ -211,6 +211,16 @@ export class SkottiePlayer extends LitElement {
   private faceBounder: FaceBounder = new FaceBounder();
 
   /**
+   * Original size of text box.
+   */
+  private originalSize: Array<number> = [];
+
+  /**
+   * Original position of text box.
+   */
+  private originalPosition: Array<number> = [];
+
+  /**
    * Renders asset input buttons after json upload.
    */
   renderAssetInputs(): TemplateResult {
@@ -459,6 +469,11 @@ export class SkottiePlayer extends LitElement {
               Reposition Text
             </button>
             <br>
+            <button
+            type="button"
+            @click="${this.revertTextPosition}">
+              Revert Text Position
+            </button>
 
             ${(this.content.layers as Layer[]).map(layer => 
               html`
@@ -589,6 +604,10 @@ export class SkottiePlayer extends LitElement {
         reader.readAsText(file);
         reader.onload = () => {
           this.setContent(JSON.parse(reader.result as string));
+          this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0]);
+          this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1]);
+          this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0]);
+          this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]);
           this.assets = {};
           this.fileString = JSON.stringify(this.content);
           this.loadJSONEditor();
@@ -773,6 +792,9 @@ export class SkottiePlayer extends LitElement {
     (this.jsonEditor as JSONEditor).set(this.content);
   }
 
+  /**
+   * Repositions text to not cover faces.
+   */
   repositionText(): void {
     const oldCanvas = document.getElementById('canvas');
     if (oldCanvas) {
@@ -785,33 +807,28 @@ export class SkottiePlayer extends LitElement {
       createImageBitmap(file).then((bitmap) => {
         const canvasElement = document.createElement('canvas');
         canvasElement.setAttribute('id', 'canvas');
-        canvasElement.setAttribute('width', bitmap.width.toString());
-        canvasElement.setAttribute('height', bitmap.height.toString());
+        canvasElement.setAttribute('width', this.width.toString());
+        canvasElement.setAttribute('height', this.height.toString());
         const context = canvasElement.getContext('2d');
         if (context) {
-          context.drawImage(bitmap, 0, 0);
+          context.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height,
+                            0, 0, this.width, this.height);
           this.faceBounder.getFaceBounds(canvasElement).then((result) => {
-            const gutterSize = 24;
-            const columnWidth = (this.width - (gutterSize * 13)) / 12;
-            const rowHeight = (this.height - (gutterSize * 13)) / 12;
-            let topLeft = [this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0] + this.width / 2,
-                           this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1] + this.height / 2];
-            let bottomRight = [topLeft[0] + this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0],
-                               topLeft[1] + this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]];
-            const height = bottomRight[0] - topLeft[0];
-            const width = bottomRight[1] - topLeft[1];
+            let [width, height, topLeft, bottomRight] = this.getTextBoxDimensions();
             for (let i = 0; i < result.length; i++) {
-              if (result[i].bottomRight[0] > topLeft[0] && result[i].bottomRight[1] > topLeft[1]
-                && result[i].topLeft[0] < bottomRight[0] && result[i].topLeft[1] < bottomRight[1]) {
-                // area left of left
-                // right of right
-                // top of top
-                // bottom of bottom
+              if (this.textBoxContainsFace(topLeft, bottomRight, 
+                result[i].topLeft, result[i].bottomRight)) {
                 const areas = [(bottomRight[1] - result[i].topLeft[1]) * height,
                                (result[i].bottomRight[1] - topLeft[1]) * height,
                                (bottomRight[0] - result[i].topLeft[0]) * width,
                                (result[i].bottomRight[0] - topLeft[0]) * width]
-                const minIndex = areas.indexOf(Math.min(...areas));
+                let minIndex = 0;
+                for (let j = 0; j < areas.length; j++) {
+                  if (areas[minIndex] < 0 || (areas[j] > 0 && areas[j] < areas[minIndex])) {
+                    minIndex = j;
+                  }
+                }
+
                 if (minIndex === 0) {
                   bottomRight[1] = result[i].topLeft[1];
                 } else if (minIndex === 1) {
@@ -821,19 +838,56 @@ export class SkottiePlayer extends LitElement {
                 } else if (minIndex === 3) {
                   topLeft[0] = result[i].bottomRight[0];
                 }
+                height = bottomRight[1] - topLeft[1];
+                width = bottomRight[0] - topLeft[0];
               }
             }
             if (this.content.assets) {
-              this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = bottomRight[1] - topLeft[1];
-              this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = bottomRight[0] - topLeft[0];
+              this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = width;
+              this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = height;
               this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = topLeft[0] - this.width / 2;
               this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = topLeft[1] - this.height / 2;
             }
-            console.log(result);
-            console.log(topLeft, bottomRight);
+            this.updateJson();
           });
         }
       })
+    }
+  }
+
+  /**
+   * Gets the text box dimensions.
+   */
+  private getTextBoxDimensions(): Array<any> {
+    let width = this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0];
+    let height = this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]
+    let topLeft = [this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0] + this.width / 2,
+                    this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1] + this.height / 2];
+    let bottomRight = [topLeft[0] + width, topLeft[1] + height];
+    return [width, height, topLeft, bottomRight];
+  }
+
+  /**
+   * Determines if a text box bounding box and a face bounding box overlap.
+   * Bounding boxes are determined by upper left and lower right corners.
+   */
+  private textBoxContainsFace(textTopLeft: Array<number>, 
+    textBottomRight: Array<number>, faceTopLeft: Array<number>,
+    faceBottomRight: Array<number>): boolean {
+    return faceBottomRight[0] > textTopLeft[0] && faceBottomRight[1] > textTopLeft[1]
+    && faceTopLeft[0] < textBottomRight[0] && faceTopLeft[1] < textBottomRight[1]
+  }
+
+  /**
+   * Reverts text box position to original position.
+   */
+  revertTextPosition(): void {
+    if (this.content.assets) {
+      this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = this.originalSize[0];
+      this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = this.originalSize[1];
+      this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = this.originalPosition[0];
+      this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = this.originalPosition[1];
+      this.updateJson();
     }
   }
 
