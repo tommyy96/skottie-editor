@@ -5,6 +5,7 @@
 import {css, customElement, html, LitElement, property, TemplateResult} from 'lit-element';
 import JSONEditor, {JSONEditorOptions} from 'jsoneditor';
 import {FaceBounder} from './face-bounder'
+import { doc } from 'prettier';
 
 const rgbToHsv = require('rgb-hsv');
 const hsvToRgb = require('hsv-rgb');
@@ -800,7 +801,6 @@ export class SkottiePlayer extends LitElement {
     if (oldCanvas) {
       oldCanvas.remove();
     }
-
     const fileInput = (this.shadowRoot?.getElementById('img_1.png-input') as HTMLInputElement);
     const file = fileInput.files?.[0];
     if (file) {
@@ -814,40 +814,20 @@ export class SkottiePlayer extends LitElement {
           context.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height,
                             0, 0, this.width, this.height);
           this.faceBounder.getFaceBounds(canvasElement).then((result) => {
-            let [width, height, topLeft, bottomRight] = this.getTextBoxDimensions();
-            for (let i = 0; i < result.length; i++) {
-              if (this.textBoxContainsFace(topLeft, bottomRight, 
-                result[i].topLeft, result[i].bottomRight)) {
-                const areas = [(bottomRight[1] - result[i].topLeft[1]) * height,
-                               (result[i].bottomRight[1] - topLeft[1]) * height,
-                               (bottomRight[0] - result[i].topLeft[0]) * width,
-                               (result[i].bottomRight[0] - topLeft[0]) * width]
-                let minIndex = 0;
-                for (let j = 0; j < areas.length; j++) {
-                  if (areas[minIndex] < 0 || (areas[j] > 0 && areas[j] < areas[minIndex])) {
-                    minIndex = j;
-                  }
-                }
+            console.log(result)
+            const [xValues, yValues, faceArray] = this.getXYValues(result);
+            console.log(faceArray);
+            
+            const [topLeft, bottomRight] = this.getTextBounds(xValues, yValues, faceArray);
+            console.log(topLeft, bottomRight);
 
-                if (minIndex === 0) {
-                  bottomRight[1] = result[i].topLeft[1];
-                } else if (minIndex === 1) {
-                  topLeft[1] = result[i].bottomRight[1];
-                } else if (minIndex === 2) {
-                  bottomRight[0] = result[i].topLeft[0];
-                } else if (minIndex === 3) {
-                  topLeft[0] = result[i].bottomRight[0];
-                }
-                height = bottomRight[1] - topLeft[1];
-                width = bottomRight[0] - topLeft[0];
-              }
-            }
             if (this.content.assets) {
-              this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = width;
-              this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = height;
+              this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = bottomRight[0] - topLeft[0];
+              this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = bottomRight[1] - topLeft[1];
               this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = topLeft[0] - this.width / 2;
               this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = topLeft[1] - this.height / 2;
             }
+
             this.updateJson();
           });
         }
@@ -856,26 +836,73 @@ export class SkottiePlayer extends LitElement {
   }
 
   /**
-   * Gets the text box dimensions.
+   * Gets potential x and y coordinates for the text bounding box.
    */
-  private getTextBoxDimensions(): Array<any> {
-    let width = this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0];
-    let height = this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]
-    let topLeft = [this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0] + this.width / 2,
-                    this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1] + this.height / 2];
-    let bottomRight = [topLeft[0] + width, topLeft[1] + height];
-    return [width, height, topLeft, bottomRight];
+  private getXYValues(faceArray: Array<any>): Array<Array<number>> {
+    const margin = 32;
+    let xValues = [margin, this.width - margin];
+    let yValues = [margin, this.height - margin];
+    for (let i = 0; i < faceArray.length; i++) {
+      faceArray[i].topLeft[0] -= margin;
+      faceArray[i].topLeft[1] -= margin;
+      faceArray[i].bottomRight[0] += margin;
+      faceArray[i].bottomRight[1] += margin;
+      xValues.push(faceArray[i].topLeft[0]);
+      yValues.push(faceArray[i].topLeft[1]);
+      xValues.push(faceArray[i].bottomRight[0]);
+      yValues.push(faceArray[i].bottomRight[1]);
+    }
+    return [xValues, yValues, faceArray];
   }
 
   /**
-   * Determines if a text box bounding box and a face bounding box overlap.
+   * Gets the largest text box possible that doesn't overlap with any of the
+   * faces in the face array.
+   */
+  private getTextBounds(xValues: Array<number>, yValues: Array<number>,
+    faceArray: Array<any>): Array<Array<number>> {
+    let topLeft = [xValues[0], yValues[0]];
+    let bottomRight = [xValues[1], yValues[1]];
+    let maxArea = 0;
+    for (let x1 = 0; x1 < xValues.length; x1++) {
+      for (let x2 = x1 + 1; x2 < xValues.length; x2++) {
+        for (let y1 = 0; y1 < yValues.length; y1++) {
+          for (let y2 = y1 + 1; y2 < yValues.length; y2++) {
+            const topLeftTemp = [Math.min(xValues[x1], xValues[x2]), 
+                                 Math.min(yValues[y1], yValues[y2])];
+            const bottomRightTemp = [Math.max(xValues[x1], xValues[x2]),
+                                     Math.max(yValues[y1], yValues[y2])];
+            const area = (bottomRightTemp[0] - topLeftTemp[0]) 
+                       * (bottomRightTemp[1] - topLeftTemp[1]);
+            if (!this.textBoxContainsFaces(topLeftTemp, 
+                bottomRightTemp, faceArray) && area > maxArea) {
+              topLeft = topLeftTemp;
+              bottomRight = bottomRightTemp;
+              maxArea = area;
+            }
+          }
+        }
+      }
+    }
+    return [topLeft, bottomRight];
+  }
+
+  /**
+   * Determines if a text box bounding box overlaps with any face in an array
+   * of face bounding boxes.
    * Bounding boxes are determined by upper left and lower right corners.
    */
-  private textBoxContainsFace(textTopLeft: Array<number>, 
-    textBottomRight: Array<number>, faceTopLeft: Array<number>,
-    faceBottomRight: Array<number>): boolean {
-    return faceBottomRight[0] > textTopLeft[0] && faceBottomRight[1] > textTopLeft[1]
-    && faceTopLeft[0] < textBottomRight[0] && faceTopLeft[1] < textBottomRight[1]
+  private textBoxContainsFaces(textTopLeft: Array<number>, 
+    textBottomRight: Array<number>, faceArray: Array<any>): boolean {
+    for (let i = 0; i < faceArray.length; i++) {
+      if (faceArray[i].bottomRight[0] > textTopLeft[0] 
+        && faceArray[i].bottomRight[1] > textTopLeft[1]
+        && faceArray[i].topLeft[0] < textBottomRight[0] 
+        && faceArray[i].topLeft[1] < textBottomRight[1]) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
