@@ -226,6 +226,12 @@ export class SkottiePlayer extends LitElement {
   private originalPosition: Array<number> = [];
 
   /**
+   * Threshold for new text box height as a proportion of the original text box
+   * height.
+   */
+  private textBoxHeightThreshold: number = 0.75;
+
+  /**
    * Renders asset input buttons after json upload.
    */
   renderAssetInputs(): TemplateResult {
@@ -807,7 +813,7 @@ export class SkottiePlayer extends LitElement {
     if (oldCanvas) {
       oldCanvas.remove();
     }
-    const fileInput = (this.shadowRoot?.getElementById('img_1.png-input') as HTMLInputElement);
+    const fileInput = (this.shadowRoot?.getElementById('img_1.jpg-input') as HTMLInputElement);
     const file = fileInput.files?.[0];
     if (file) {
       createImageBitmap(file).then((bitmap) => {
@@ -878,10 +884,12 @@ export class SkottiePlayer extends LitElement {
                                  Math.max(Math.min(yValues[y1], yValues[y2]), 0)];
             const bottomRightTemp = [Math.max(xValues[x1], xValues[x2]),
                                      Math.max(yValues[y1], yValues[y2])];
-            const area = (bottomRightTemp[0] - topLeftTemp[0]) 
-                       * (bottomRightTemp[1] - topLeftTemp[1]);
-            if (!this.textBoxContainsFaces(topLeftTemp, 
-                bottomRightTemp, faceArray) && area > maxArea) {
+            const height = bottomRightTemp[1] - topLeftTemp[1];
+            const width = bottomRightTemp[0] - topLeftTemp[0];
+            const area = width * height;
+            if (!this.textBoxContainsFaces(topLeftTemp, bottomRightTemp, faceArray) 
+                && height > this.originalSize[1] * this.textBoxHeightThreshold
+                && area > maxArea) {
               topLeft = topLeftTemp;
               bottomRight = bottomRightTemp;
               maxArea = area;
