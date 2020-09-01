@@ -212,12 +212,16 @@ export class SkottiePlayer extends LitElement {
   private faceBounder: FaceBounder = new FaceBounder();
 
   /**
-   * Original size of text box.
+   * Original size of text box. Populated when the json is read. An array 
+   * of length 2 that contains width and height in pixels.
    */
   private originalSize: Array<number> = [];
 
   /**
-   * Original position of text box.
+   * Original position of text box. Populated when the json is read. An array 
+   * of length 2 that contains the x and y coordinates of the top left corner 
+   * of the text box in a system where the center of the animation is the 
+   * origin.
    */
   private originalPosition: Array<number> = [];
 
@@ -605,6 +609,8 @@ export class SkottiePlayer extends LitElement {
         reader.readAsText(file);
         reader.onload = () => {
           this.setContent(JSON.parse(reader.result as string));
+          // The index 9 here is the index in the asset array from the JSON that 
+          // corresponds to the text asset moved by the text repositioning.
           this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0]);
           this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1]);
           this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0]);
@@ -868,8 +874,8 @@ export class SkottiePlayer extends LitElement {
       for (let x2 = x1 + 1; x2 < xValues.length; x2++) {
         for (let y1 = 0; y1 < yValues.length; y1++) {
           for (let y2 = y1 + 1; y2 < yValues.length; y2++) {
-            const topLeftTemp = [Math.min(xValues[x1], xValues[x2]), 
-                                 Math.min(yValues[y1], yValues[y2])];
+            const topLeftTemp = [Math.max(Math.min(xValues[x1], xValues[x2]), 0), 
+                                 Math.max(Math.min(yValues[y1], yValues[y2]), 0)];
             const bottomRightTemp = [Math.max(xValues[x1], xValues[x2]),
                                      Math.max(yValues[y1], yValues[y2])];
             const area = (bottomRightTemp[0] - topLeftTemp[0]) 
