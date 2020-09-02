@@ -378,7 +378,7 @@ function arraysEqual(array1: Array<string>, array2: Array<string>): boolean {
 /**
  * Gets the lab color distance between two RGB color strings.
  */
-function colorDistance(color1: string, color2: string): number {
+export function colorDistance(color1: string, color2: string): number {
   const labColor1 = rgb2lab([parseInt(color1.slice(0,3)), 
     parseInt(color1.slice(3,6)), parseInt(color1.slice(6))]);
   const labColor2 = rgb2lab([parseInt(color2.slice(0,3)),
