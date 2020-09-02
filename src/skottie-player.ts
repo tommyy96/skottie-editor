@@ -4,6 +4,7 @@
 
 import {css, customElement, html, LitElement, property, TemplateResult} from 'lit-element';
 import JSONEditor, {JSONEditorOptions} from 'jsoneditor';
+import {FaceBounder} from './face-bounder'
 import {BodySegmenter} from './body-segmenter';
 import {DominantColorComputer, colorDistance} from './color-extractor';
 
@@ -204,6 +205,31 @@ export class SkottiePlayer extends LitElement {
    * Boolean indicating if the animation has been rendered in the past.
    */
   private animationUploaded: Boolean = false;
+
+  /**
+   * For finding face boundaries.
+   */
+  private faceBounder: FaceBounder = new FaceBounder();
+
+  /**
+   * Original size of text box. Populated when the json is read. An array 
+   * of length 2 that contains width and height in pixels.
+   */
+  private originalSize: Array<number> = [];
+
+  /**
+   * Original position of text box. Populated when the json is read. An array 
+   * of length 2 that contains the x and y coordinates of the top left corner 
+   * of the text box in a system where the center of the animation is the 
+   * origin.
+   */
+  private originalPosition: Array<number> = [];
+
+  /**
+   * Threshold for new text box height as a proportion of the original text box
+   * height.
+   */
+  private textBoxHeightThreshold: number = 0.75;
 
   /**
    * For performing body segmentation.
@@ -412,6 +438,13 @@ export class SkottiePlayer extends LitElement {
             value="${asset.layers[0].t.d.k[0].s.t}"
             @change="${this.updateJson}">
             <br>
+            ${asset.layers[0].nm} text size:
+            <input
+            id="${asset.id + ' ' + asset.layers[0].nm + ' size'} Input"
+            type="number"
+            value="${parseFloat(asset.layers[0].t.d.k[0].s.s)}"
+            @change="${this.updateJson}">
+            <br>
           `:
           ""
         )}
@@ -474,6 +507,18 @@ export class SkottiePlayer extends LitElement {
             </div>
 
             ${this.renderTextAssets()}
+
+            <button
+            type="button"
+            @click="${this.repositionText}">
+              Reposition Text
+            </button>
+            <br>
+            <button
+            type="button"
+            @click="${this.revertTextPosition}">
+              Revert Text Position
+            </button>
 
             ${(this.content.layers as Layer[]).map(layer => 
               html`
@@ -684,6 +729,12 @@ export class SkottiePlayer extends LitElement {
         reader.readAsText(file);
         reader.onload = () => {
           this.setContent(JSON.parse(reader.result as string));
+          // The index 9 here is the index in the asset array from the JSON that 
+          // corresponds to the text asset moved by the text repositioning.
+          this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0]);
+          this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1]);
+          this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0]);
+          this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]);
           this.assets = {};
           this.fileString = JSON.stringify(this.content);
           this.loadJSONEditor();
@@ -917,6 +968,133 @@ export class SkottiePlayer extends LitElement {
   }
 
   /**
+   * Repositions text to not cover faces.
+   */
+  repositionText(): void {
+    const oldCanvas = document.getElementById('canvas');
+    if (oldCanvas) {
+      oldCanvas.remove();
+    }
+    const fileInput = (this.shadowRoot?.getElementById('img_1.jpg-input') as HTMLInputElement);
+    const file = fileInput.files?.[0];
+    if (file) {
+      createImageBitmap(file).then((bitmap) => {
+        const canvasElement = document.createElement('canvas');
+        canvasElement.setAttribute('id', 'canvas');
+        canvasElement.setAttribute('width', this.width.toString());
+        canvasElement.setAttribute('height', this.height.toString());
+        const context = canvasElement.getContext('2d');
+        if (context) {
+          context.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height,
+                            0, 0, this.width, this.height);
+          this.faceBounder.getFaceBounds(canvasElement).then((result) => {
+            console.log(result)
+            const [xValues, yValues, faceArray] = this.getXYValues(result);
+            console.log(faceArray);
+            
+            const [topLeft, bottomRight] = this.getTextBounds(xValues, yValues, faceArray);
+            console.log(topLeft, bottomRight);
+
+            if (this.content.assets) {
+              this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = bottomRight[0] - topLeft[0];
+              this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = bottomRight[1] - topLeft[1];
+              this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = topLeft[0] - this.width / 2;
+              this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = topLeft[1] - this.height / 2;
+            }
+
+            this.updateJson();
+          });
+        }
+      })
+    }
+  }
+
+  /**
+   * Gets potential x and y coordinates for the text bounding box.
+   */
+  private getXYValues(faceArray: Array<any>): Array<Array<number>> {
+    const margin = 32;
+    let xValues = [margin, this.width - margin];
+    let yValues = [margin, this.height - margin];
+    for (let i = 0; i < faceArray.length; i++) {
+      faceArray[i].topLeft[0] -= margin;
+      faceArray[i].topLeft[1] -= margin;
+      faceArray[i].bottomRight[0] += margin;
+      faceArray[i].bottomRight[1] += margin;
+      xValues.push(faceArray[i].topLeft[0]);
+      yValues.push(faceArray[i].topLeft[1]);
+      xValues.push(faceArray[i].bottomRight[0]);
+      yValues.push(faceArray[i].bottomRight[1]);
+    }
+    return [xValues, yValues, faceArray];
+  }
+
+  /**
+   * Gets the largest text box possible that doesn't overlap with any of the
+   * faces in the face array.
+   */
+  private getTextBounds(xValues: Array<number>, yValues: Array<number>,
+    faceArray: Array<any>): Array<Array<number>> {
+    let topLeft = [xValues[0], yValues[0]];
+    let bottomRight = [xValues[1], yValues[1]];
+    let maxArea = 0;
+    for (let x1 = 0; x1 < xValues.length; x1++) {
+      for (let x2 = x1 + 1; x2 < xValues.length; x2++) {
+        for (let y1 = 0; y1 < yValues.length; y1++) {
+          for (let y2 = y1 + 1; y2 < yValues.length; y2++) {
+            const topLeftTemp = [Math.max(Math.min(xValues[x1], xValues[x2]), 0), 
+                                 Math.max(Math.min(yValues[y1], yValues[y2]), 0)];
+            const bottomRightTemp = [Math.max(xValues[x1], xValues[x2]),
+                                     Math.max(yValues[y1], yValues[y2])];
+            const height = bottomRightTemp[1] - topLeftTemp[1];
+            const width = bottomRightTemp[0] - topLeftTemp[0];
+            const area = width * height;
+            if (!this.textBoxContainsFaces(topLeftTemp, bottomRightTemp, faceArray) 
+                && height > this.originalSize[1] * this.textBoxHeightThreshold
+                && area > maxArea) {
+              topLeft = topLeftTemp;
+              bottomRight = bottomRightTemp;
+              maxArea = area;
+            }
+          }
+        }
+      }
+    }
+    return [topLeft, bottomRight];
+  }
+
+  /**
+   * Determines if a text box bounding box overlaps with any face in an array
+   * of face bounding boxes.
+   * Bounding boxes are determined by upper left and lower right corners.
+   */
+  private textBoxContainsFaces(textTopLeft: Array<number>, 
+    textBottomRight: Array<number>, faceArray: Array<any>): boolean {
+    for (let i = 0; i < faceArray.length; i++) {
+      if (faceArray[i].bottomRight[0] > textTopLeft[0] 
+        && faceArray[i].bottomRight[1] > textTopLeft[1]
+        && faceArray[i].topLeft[0] < textBottomRight[0] 
+        && faceArray[i].topLeft[1] < textBottomRight[1]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Reverts text box position to original position.
+   */
+  revertTextPosition(): void {
+    if (this.content.assets) {
+      this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = this.originalSize[0];
+      this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = this.originalSize[1];
+      this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = this.originalPosition[0];
+      this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = this.originalPosition[1];
+      this.updateJson();
+    }
+  }
+
+  /**
    * Shows the JSONEditor and hids the GUI editor. Also applies updates
    * to the stored JSON data.
    */
@@ -1084,10 +1262,13 @@ export class SkottiePlayer extends LitElement {
     if (this.content.assets && this.content.assets[assetIndex].layers) {
       const textInput = (this.shadowRoot?.getElementById(this.content.assets[assetIndex].id
         + ' ' + this.content.assets[assetIndex].layers[layerIndex].nm + ' Input') as HTMLInputElement);
-      if (textInput && this.content.assets[assetIndex].layers[layerIndex].t.d.k) {
+      const sizeInput = (this.shadowRoot?.getElementById(this.content.assets[assetIndex].id
+        + ' ' + this.content.assets[assetIndex].layers[layerIndex].nm + ' size Input') as HTMLInputElement);
+      if (textInput && sizeInput && this.content.assets[assetIndex].layers[layerIndex].t.d.k) {
         for (let i = 0; i < this.content.assets[assetIndex].layers[layerIndex].t.d.k.length; i++) {
           if (this.content.assets[assetIndex].layers[layerIndex].t.d.k[i].s) {
             this.content.assets[assetIndex].layers[layerIndex].t.d.k[i].s.t = textInput.value;
+            this.content.assets[assetIndex].layers[layerIndex].t.d.k[i].s.s = sizeInput.valueAsNumber;
             return;
           }
         }
