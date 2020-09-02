@@ -180,6 +180,18 @@ export class SkottiePlayer extends LitElement {
   @property({type: Boolean})
   showJsonEditor = false;
 
+  /**
+   * Indicator for text repositioning.
+   */
+  @property({type: Boolean})
+  textRepositioned = false;
+
+  /**
+   * Indicator for if the body segmentation is used.
+   */
+  @property({type: Boolean})
+  bodySegmentUsed = false;
+
   /** 
    * The user uploaded assets.
    */
@@ -226,6 +238,20 @@ export class SkottiePlayer extends LitElement {
   private originalPosition: Array<number> = [];
 
   /**
+   * Size of text box after repositioning to avoid faces. An array of length 2
+   * that contains width and height in pixels.
+   */
+  private repositionedSize: Array<number> = [];
+
+  /**
+   * Position of text box after repositioning to avoid faces. An array of 
+   * length 2 that contains the x and y coordinates of the top left corner
+   * of the text box in a system where the center of the animation is the 
+   * origin.
+   */
+  private repositionedPosition: Array<number> = [];
+
+  /**
    * Threshold for new text box height as a proportion of the original text box
    * height.
    */
@@ -264,6 +290,16 @@ export class SkottiePlayer extends LitElement {
    * Acceptable text colors as hex strings.
    */
   private textColors: Array<string> = ['000000000', '255255255'];
+
+  /**
+   * Body segmented image data.
+   */
+  private bodySegmentBlob: Blob = new Blob();
+
+  /**
+   * Transparent image data.
+   */
+  private transparentBlob: Blob = new Blob();
 
   /**
    * Renders asset input buttons after json upload.
@@ -453,6 +489,48 @@ export class SkottiePlayer extends LitElement {
     return '';
   }
 
+  renderTextRepositionButton(): TemplateResult {
+    if (!this.textRepositioned) {
+      return html`
+        <button
+        type="button"
+        @click="${this.repositionText}">
+          Reposition Text
+        </button>
+        <br>
+      `;
+    }
+    return html`
+      <button
+      type="button"
+      @click="${this.revertTextPosition}">
+        Revert Text Position
+      </button>
+      <br>
+    `;
+  }
+
+  renderBodySegmentButton(): TemplateResult {
+    if (this.bodySegmentUsed) {
+      return html`
+        <button
+        type="button"
+        @click="${this.bodySegmentToggle}">
+          Revert Body Segmentation
+        </button>
+        <br>
+      `;
+    }
+    return html`
+      <button
+      type="button"
+      @click="${this.bodySegmentToggle}">
+        Use Body Segmentation
+      </button>
+      <br>
+    `;
+  }
+
   render(): TemplateResult {
     return html`
       <h1>${this.title}</h1>
@@ -507,18 +585,9 @@ export class SkottiePlayer extends LitElement {
             </div>
 
             ${this.renderTextAssets()}
-
-            <button
-            type="button"
-            @click="${this.repositionText}">
-              Reposition Text
-            </button>
-            <br>
-            <button
-            type="button"
-            @click="${this.revertTextPosition}">
-              Revert Text Position
-            </button>
+            ${this.renderTextRepositionButton()}
+            ${this.renderBodySegmentButton()}
+            
 
             ${(this.content.layers as Layer[]).map(layer => 
               html`
@@ -576,10 +645,8 @@ export class SkottiePlayer extends LitElement {
    * @param reader      Used when reading image as asset
    * @param file        Image file
    * @param mapKey      Name of original asset
-   * @param maskMapKey  Name of mask asset
    */
-  private bodySegment(reader: FileReader, file: File, mapKey: string,
-    maskMapKey: string): void {
+  private bodySegment(reader: FileReader, file: File, mapKey: string): void {
     const url = URL.createObjectURL(file);
     const oldCanvas = document.getElementById('canvas');
     if (oldCanvas) {
@@ -638,7 +705,18 @@ export class SkottiePlayer extends LitElement {
           context.putImageData(myData, 0, 0);
           canvasElement.toBlob((blob) => {
             if (blob != null) {
-              this.readAssetFile(reader, blob, maskMapKey);
+              this.bodySegmentBlob = blob;
+            }
+          });
+          for (let i = 0; i < myData.data.length; i++) {
+            myData.data[i] = 0;
+          }
+          context.putImageData(myData, 0, 0);
+          canvasElement.toBlob((blob) => {
+            if (blob != null) {
+              this.transparentBlob = blob;
+              this.bodySegmentUsed = true;
+              this.bodySegmentToggle();
             }
           });
           this.updateJson();
@@ -648,6 +726,17 @@ export class SkottiePlayer extends LitElement {
       }
     }
     img.src = url;
+  }
+
+  bodySegmentToggle() {
+    const reader = new FileReader();
+    if (!this.bodySegmentUsed) {
+      this.bodySegmentUsed = true;
+      this.readAssetFile(reader, this.bodySegmentBlob, 'img_3.png');
+    } else {
+      this.bodySegmentUsed = false;
+      this.readAssetFile(reader, this.transparentBlob, 'img_3.png');
+    }
   }
 
   /**
@@ -735,6 +824,8 @@ export class SkottiePlayer extends LitElement {
           this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1]);
           this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0]);
           this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]);
+          this.textRepositioned = false;
+          this.bodySegmentUsed = false;
           this.assets = {};
           this.fileString = JSON.stringify(this.content);
           this.loadJSONEditor();
@@ -760,7 +851,8 @@ export class SkottiePlayer extends LitElement {
       const reader = new FileReader();
       const value = this.segmentBodyAssetMap.get(mapKey);
       if (value) {
-        this.bodySegment(reader, file, mapKey, value);
+        this.bodySegment(reader, file, mapKey);
+        this.getRepositionedValues(mapKey);
       }
       if (mapKey === this.logoImageName) {
         this.extractLogoColors();
@@ -971,11 +1063,22 @@ export class SkottiePlayer extends LitElement {
    * Repositions text to not cover faces.
    */
   repositionText(): void {
+    if (this.content.assets) {
+      this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = this.repositionedSize[0];
+      this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = this.repositionedSize[1];
+      this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = this.repositionedPosition[0];
+      this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = this.repositionedPosition[1];
+      this.textRepositioned = true;
+      this.updateJson();
+    }
+  }
+
+  private getRepositionedValues(mapKey: string): void {
     const oldCanvas = document.getElementById('canvas');
     if (oldCanvas) {
       oldCanvas.remove();
     }
-    const fileInput = (this.shadowRoot?.getElementById('img_1.jpg-input') as HTMLInputElement);
+    const fileInput = (this.shadowRoot?.getElementById(mapKey + '-input') as HTMLInputElement);
     const file = fileInput.files?.[0];
     if (file) {
       createImageBitmap(file).then((bitmap) => {
@@ -995,14 +1098,8 @@ export class SkottiePlayer extends LitElement {
             const [topLeft, bottomRight] = this.getTextBounds(xValues, yValues, faceArray);
             console.log(topLeft, bottomRight);
 
-            if (this.content.assets) {
-              this.content.assets[9].layers[0].t.d.k[0].s.sz[0] = bottomRight[0] - topLeft[0];
-              this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = bottomRight[1] - topLeft[1];
-              this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = topLeft[0] - this.width / 2;
-              this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = topLeft[1] - this.height / 2;
-            }
-
-            this.updateJson();
+            this.repositionedPosition = [topLeft[0] - this.width / 2, topLeft[1] - this.height / 2];
+            this.repositionedSize = [bottomRight[0] - topLeft[0], bottomRight[1] - topLeft[1]];
           });
         }
       })
@@ -1090,6 +1187,7 @@ export class SkottiePlayer extends LitElement {
       this.content.assets[9].layers[0].t.d.k[0].s.sz[1] = this.originalSize[1];
       this.content.assets[9].layers[0].t.d.k[0].s.ps[0] = this.originalPosition[0];
       this.content.assets[9].layers[0].t.d.k[0].s.ps[1] = this.originalPosition[1];
+      this.textRepositioned = false;
       this.updateJson();
     }
   }
