@@ -5,11 +5,11 @@
 import {css, customElement, html, LitElement, property, TemplateResult} from 'lit-element';
 import JSONEditor, {JSONEditorOptions} from 'jsoneditor';
 import {FaceBounder} from './face-bounder'
-import { doc } from 'prettier';
+import {BodySegmenter} from './body-segmenter';
+import {DominantColorComputer, colorDistance} from './color-extractor';
 
 const rgbToHsv = require('rgb-hsv');
 const hsvToRgb = require('hsv-rgb');
-const { DominantColorComputer } = require('./color-extractor');
 const SkottieKitInit = require('skottiekit-wasm/bin/skottiekit.js');
 const loadKit = SkottieKitInit({
   locateFile: (file: string) => '/node_modules/skottiekit-wasm/bin/'+file,
@@ -230,6 +230,40 @@ export class SkottiePlayer extends LitElement {
    * height.
    */
   private textBoxHeightThreshold: number = 0.75;
+
+  /**
+   * For performing body segmentation.
+   */
+  private bodySegmenter: BodySegmenter = new BodySegmenter();
+
+  /**
+   * Set of names of assets to extract dominant color from.
+   */
+  private extractColorAssetNames: Set<string> =
+    new Set<string>(['Image_0.jpeg']);
+
+  /**
+   * Map from original image asset names to create body segmented masks from
+   * to asset names of body segmented masks.
+   */
+  private segmentBodyAssetMap: Map<string, string> =
+    new Map<string, string>([['img_1.jpg', 'img_3.png']]);
+  
+  /**
+   * Set of asset names of body segmented masks.
+   */
+  private segmentBodyAssetValues: Set<string> = 
+    new Set(this.segmentBodyAssetMap.values());
+
+  /**
+   * Name of asset wiht logo image.
+   */
+  private logoImageName = 'img_0.jpg';
+
+  /**
+   * Acceptable text colors as hex strings.
+   */
+  private textColors: Array<string> = ['000000000', '255255255'];
 
   /**
    * Renders asset input buttons after json upload.
@@ -535,6 +569,86 @@ export class SkottiePlayer extends LitElement {
     }
   }
 
+  /**
+   * Finds the bodies of people in an an image and creates a new image with 
+   * only the bodies.
+   * 
+   * @param reader      Used when reading image as asset
+   * @param file        Image file
+   * @param mapKey      Name of original asset
+   * @param maskMapKey  Name of mask asset
+   */
+  private bodySegment(reader: FileReader, file: File, mapKey: string,
+    maskMapKey: string): void {
+    const url = URL.createObjectURL(file);
+    const oldCanvas = document.getElementById('canvas');
+    if (oldCanvas) {
+      oldCanvas.remove();
+    }
+    const img = new Image();
+    img.onload = () => { 
+      const canvasElement = document.createElement('canvas');
+      canvasElement.setAttribute('id', 'canvas');
+      canvasElement.setAttribute('width', img.width.toString());
+      canvasElement.setAttribute('height', img.height.toString());
+      const context = canvasElement.getContext('2d');
+      if (context) {
+        context.drawImage(img, 0, 0, img.width, img.height);
+        let myData = context.getImageData(0, 0, img.width, img.height);
+        
+        const numClusters = 5;
+        const colorThreshold = 30;
+        const dominantColorComputer = new DominantColorComputer(myData);
+        let [centers, centerCounts] = 
+          dominantColorComputer.getDominantColors(numClusters, [], colorThreshold);
+        let index = 0;
+        for (let i = 0; i < centerCounts.length; i++) {
+          if (centerCounts[i] > centerCounts[index]) {
+            index = i;
+          }
+        }
+        let color = centers[index];
+        let [textColor, maxDist] = ['', 0];
+        color = this.hexToColorString(color);
+        for (let i = 0; i < this.textColors.length; i++) {
+          console.log(this.textColors[i]);
+          const newDist = colorDistance(color, this.textColors[i]);
+          if (newDist > maxDist) {
+            maxDist = newDist;
+            textColor = this.textColors[i];
+          }
+        }
+
+        let red = parseInt(textColor.slice(0, 3)) / 255;
+        let green = parseInt(textColor.slice(0, 3)) / 255;
+        let blue = parseInt(textColor.slice(0, 3)) / 255;
+
+        if (this.content.layers && this.content.layers[15].ef) {
+          this.content.layers[15].ef[0].ef[2].v.k = [red, green, blue, 1];
+        }
+
+        this.bodySegmenter.segmentPerson(myData).then((mask) => {
+          for (let i = 0; i < mask.length; i++) {
+            if (mask[i] === 0) {
+              // change the alpha value of pixels to 0 if the pixel 
+              // is not part of a body
+              myData.data[i * 4 + 3] = 0;
+            }
+          }
+          context.putImageData(myData, 0, 0);
+          canvasElement.toBlob((blob) => {
+            if (blob != null) {
+              this.readAssetFile(reader, blob, maskMapKey);
+            }
+          });
+          this.updateJson();
+          this.readAssetFile(reader, file, mapKey);
+          URL.revokeObjectURL(url);
+        });
+      }
+    }
+    img.src = url;
+  }
 
   /**
    * Sets content object as well as width and height.
@@ -640,12 +754,60 @@ export class SkottiePlayer extends LitElement {
     const files = assetInput.files;
     const file = files?.[0];
     if (file && mapKey) {
+      if (this.segmentBodyAssetValues.has(mapKey)) {
+        return;
+      }
       const reader = new FileReader();
-      if (mapKey === 'Image_0.jpeg') {
+      const value = this.segmentBodyAssetMap.get(mapKey);
+      if (value) {
+        this.bodySegment(reader, file, mapKey, value);
+      }
+      if (mapKey === this.logoImageName) {
+        this.extractLogoColors();
+      }
+      if (this.extractColorAssetNames.has(mapKey)) {
         this.updateColors(reader, file, mapKey);
       } else {
         this.readAssetFile(reader, file, mapKey);
       }
+    }
+  }
+
+  /**
+   * Extracts dominant colors from the logo image and adds them to the 
+   * potential text color array.
+   */
+  private extractLogoColors() {
+    const input = (this.shadowRoot?.getElementById(this.logoImageName + '-input') as HTMLInputElement);
+    const file = input.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      const oldCanvas = document.getElementById('canvas');
+      if (oldCanvas) {
+        oldCanvas.remove();
+      }
+      const img = new Image();
+      img.onload = () => { 
+        const canvasElement = document.createElement('canvas');
+        canvasElement.setAttribute('id', 'canvas');
+        canvasElement.setAttribute('width', img.width.toString());
+        canvasElement.setAttribute('height', img.height.toString());
+        const context = canvasElement.getContext('2d');
+        if (context) {
+          context.drawImage(img, 0, 0, img.width, img.height);
+          let myData = context.getImageData(0, 0, img.width, img.height);
+          
+          const numClusters = 5;
+          const colorThreshold = 30;
+          const dominantColorComputer = new DominantColorComputer(myData);
+          let [centers, ] = 
+            dominantColorComputer.getDominantColors(numClusters, [], colorThreshold);
+          for (let i = 0; i < centers.length; i++) {
+            this.textColors.push(this.hexToColorString(centers[i]));
+          }
+        }
+      };
+      img.src = url;
     }
   }
 
@@ -790,7 +952,7 @@ export class SkottiePlayer extends LitElement {
    * Reads in an asset file as an ArrayBuffer. Stores the read file in the 
    * assets object and updates the player.
    */
-  private readAssetFile(reader: FileReader, file: File, mapKey: string): void {
+  private readAssetFile(reader: FileReader, file: File|Blob, mapKey: string): void {
     reader.readAsArrayBuffer(file);
     reader.onload = () => {
       (this.assets as any)[mapKey] = reader.result;
@@ -1197,6 +1359,23 @@ export class SkottiePlayer extends LitElement {
     const g = parseInt(hex.slice(3, 5), 16) / 255;
     const b = parseInt(hex.slice(5, 7), 16) / 255;
     return [r, g, b];
+  }
+
+  private hexToColorString(hex: string): string {
+    const colorArray = this.hexToRgb(hex);
+    let r = Math.round(colorArray[0] * 255).toString();
+    while (r.length < 3) {
+      r = '0' + r;
+    }
+    let g = Math.round(colorArray[1] * 255).toString();
+    while (g.length < 3) {
+      g = '0' + g;
+    }
+    let b = Math.round(colorArray[2] * 255).toString();
+    while (b.length < 3) {
+      b = '0' + b;
+    }
+    return r + g + b;
   }
 
   /**
