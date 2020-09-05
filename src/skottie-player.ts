@@ -820,10 +820,14 @@ export class SkottiePlayer extends LitElement {
           this.setContent(JSON.parse(reader.result as string));
           // The index 9 here is the index in the asset array from the JSON that 
           // corresponds to the text asset moved by the text repositioning.
-          this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0]);
-          this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1]);
-          this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0]);
-          this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]);
+          if (this.content.assets?.[9]) {
+            if(this.content.assets?.[9].layers[0].t.d.k[0].s) {
+              this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[0]);
+              this.originalPosition.push(this.content.assets?.[9].layers[0].t.d.k[0].s.ps[1]);
+              this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[0]);
+              this.originalSize.push(this.content.assets?.[9].layers[0].t.d.k[0].s.sz[1]);
+            }
+          }
           this.textRepositioned = false;
           this.bodySegmentUsed = false;
           this.assets = {};
@@ -1109,7 +1113,7 @@ export class SkottiePlayer extends LitElement {
   /**
    * Gets potential x and y coordinates for the text bounding box.
    */
-  private getXYValues(faceArray: Array<any>): Array<Array<number>> {
+  private getXYValues(faceArray: Array<any>): Array<Array<any>> {
     const margin = 32;
     let xValues = [margin, this.width - margin];
     let yValues = [margin, this.height - margin];
